@@ -1,11 +1,11 @@
 export type Locale = 'en' | 'ko' | 'ja' | 'es' | 'zh';
 
-export const SUPPORTED_LOCALES: Array<{ code: Locale; label: string }> = [
-  { code: 'en', label: 'EN · English' },
-  { code: 'ko', label: 'KO · 한국어' },
-  { code: 'ja', label: 'JA · 日本語' },
-  { code: 'es', label: 'ES · Español' },
-  { code: 'zh', label: 'ZH · 中文' },
+export const SUPPORTED_LOCALES: Array<{ code: Locale; label: string; shortLabel: string }> = [
+  { code: 'en', label: 'EN · English', shortLabel: 'EN' },
+  { code: 'ko', label: 'KO · 한국어', shortLabel: 'KO' },
+  { code: 'ja', label: 'JA · 日本語', shortLabel: 'JA' },
+  { code: 'es', label: 'ES · Español', shortLabel: 'ES' },
+  { code: 'zh', label: 'ZH · 中文', shortLabel: '中文' },
 ];
 
 export function detectLocale(input?: string | null): Locale {

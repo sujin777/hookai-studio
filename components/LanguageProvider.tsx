@@ -72,13 +72,13 @@ export function LanguageSelector() {
           key={item.code}
           type="button"
           onClick={() => setLocale(item.code)}
-          className={`px-2.5 py-1 rounded-md uppercase transition-all cursor-pointer ${
+          className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
             locale === item.code
               ? 'bg-white text-zinc-950 shadow-2xs'
               : 'text-zinc-400 hover:text-zinc-700'
           }`}
         >
-          {item.code}
+          {item.shortLabel}
         </button>
       ))}
     </div>
