@@ -51,6 +51,7 @@ export default function InteriorAppPage() {
   const [previewSrc, setPreviewSrc] = useState<string>('');
   const [resultUrl, setResultUrl] = useState<string>('');
   const [viewMode, setViewMode] = useState<'2d' | '360'>('2d');
+  const [comparePos, setComparePos] = useState<number>(50);
   const [isWatermarked, setIsWatermarked] = useState(false);
   const [remainingCredits, setRemainingCredits] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -341,12 +342,89 @@ export default function InteriorAppPage() {
                   onUnlockClick={openPaddleCheckout}
                 />
               ) : (
-                <div className="relative rounded-2xl overflow-hidden border border-zinc-200">
-                  <img src={resultUrl} alt="Redesigned room" className="w-full object-cover" />
-                  {isWatermarked && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/15">
-                      <span className="text-white/75 text-lg sm:text-2xl font-black tracking-widest rotate-[-18deg] select-none text-center px-4">
-                        {t.interiorWatermarkText}
+                <div className="space-y-3">
+                  {/* 2D Before / After 비교 슬라이더 */}
+                  <div
+                    className="relative rounded-2xl overflow-hidden border border-zinc-200 bg-zinc-950 select-none touch-pan-y"
+                    onPointerMove={(e) => {
+                      if (e.buttons !== 1 && e.pointerType === 'mouse') return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pct = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+                      setComparePos(Math.round(pct));
+                    }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pct = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+                      setComparePos(Math.round(pct));
+                    }}
+                  >
+                    {/* After (변경 후) 전체 배경 */}
+                    <img src={resultUrl} alt="Redesigned room" className="w-full block object-cover" />
+
+                    {/* Before (변경 전) 왼쪽 클리핑 */}
+                    {previewSrc && (
+                      <div
+                        className="absolute inset-0 overflow-hidden pointer-events-none"
+                        style={{ clipPath: `inset(0 ${100 - comparePos}% 0 0)` }}
+                      >
+                        <img
+                          src={previewSrc}
+                          alt="Original room"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {/* 중앙 슬라이더 분할선 & 핸들 */}
+                    {previewSrc && (
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.6)] pointer-events-none"
+                        style={{ left: `${comparePos}%` }}
+                      >
+                        <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white text-zinc-950 shadow-lg border border-zinc-200 flex items-center justify-center text-xs font-black">
+                          ↔
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Before / After 라벨 */}
+                    {previewSrc && (
+                      <>
+                        <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-zinc-950/75 text-white text-[11px] font-bold backdrop-blur-sm pointer-events-none">
+                          {locale === 'ko' ? '변경 전' : 'Before'}
+                        </span>
+                        <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-emerald-600/85 text-white text-[11px] font-bold backdrop-blur-sm pointer-events-none">
+                          {locale === 'ko' ? '변경 후' : 'After'}
+                        </span>
+                      </>
+                    )}
+
+                    {isWatermarked && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/10">
+                        <span className="text-white/75 text-lg sm:text-2xl font-black tracking-widest rotate-[-18deg] select-none text-center px-4">
+                          {t.interiorWatermarkText}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 스크롤/슬라이드 바 */}
+                  {previewSrc && (
+                    <div className="flex items-center gap-3 px-2">
+                      <span className="text-xs font-bold text-zinc-500 shrink-0">
+                        {locale === 'ko' ? '변경 전' : 'Before'}
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={comparePos}
+                        onChange={(e) => setComparePos(Number(e.target.value))}
+                        aria-label="Before and after comparison slider"
+                        className="w-full accent-zinc-950 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-emerald-700 shrink-0">
+                        {locale === 'ko' ? '변경 후' : 'After'}
                       </span>
                     </div>
                   )}

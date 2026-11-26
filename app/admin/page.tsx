@@ -21,6 +21,7 @@ interface PaymentRecord {
 
 interface OverviewState {
   source: 'supabase' | 'memory';
+  warning?: string;
   totalCustomers: number;
   totalPayments: number;
   totalInteriorCredits: number;
@@ -358,6 +359,11 @@ export default function AdminDashboardPage() {
         </section>
 
         {/* Feedback Banners */}
+        {overview?.warning && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900">
+            {overview.warning}
+          </div>
+        )}
         {actionMsg && (
           <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
             {actionMsg}

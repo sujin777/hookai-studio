@@ -18,12 +18,19 @@ export interface PaymentRecord {
 
 export interface AdminOverview {
   source: 'supabase' | 'memory';
+  warning?: string;
   totalCustomers: number;
   totalPayments: number;
   totalInteriorCredits: number;
   totalContractCredits: number;
   todayFreeUsage: number;
   payments: PaymentRecord[];
+}
+
+function isMissingTableError(message?: string): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  return lower.includes('schema cache') || lower.includes('does not exist') || lower.includes('relation');
 }
 
 // Local in-memory fallback when Supabase is not configured
@@ -55,7 +62,15 @@ export async function listCustomers(query?: string): Promise<{
   }
 
   const { data, error } = await builder;
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isMissingTableError(error.message)) {
+      const all = Array.from(memoryCustomers.values())
+        .filter((c) => !q || c.email.includes(q))
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+      return { source: 'memory', customers: all };
+    }
+    throw new Error(error.message);
+  }
   return { source: 'supabase', customers: (data || []) as CustomerRecord[] };
 }
 
@@ -85,11 +100,24 @@ export async function createCustomer(input: {
     return record;
   }
 
-  const { data: existing } = await supabase
+  const { data: existing, error: findErr } = await supabase
     .from('user_credits')
     .select('email')
     .eq('email', email)
     .maybeSingle();
+
+  if (findErr && isMissingTableError(findErr.message)) {
+    if (memoryCustomers.has(email)) throw new Error('Customer email already exists.');
+    const record: CustomerRecord = {
+      email,
+      interior_credits,
+      contract_credits,
+      created_at: now,
+      updated_at: now,
+    };
+    memoryCustomers.set(email, record);
+    return record;
+  }
 
   if (existing) {
     throw new Error('Customer email already exists.');
@@ -185,8 +213,24 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       .eq('usage_date', today),
   ]);
 
-  if (customersRes.error) throw new Error(customersRes.error.message);
-  if (paymentsRes.error) throw new Error(paymentsRes.error.message);
+  if (customersRes.error || paymentsRes.error) {
+    const errMsg = customersRes.error?.message || paymentsRes.error?.message || '';
+    if (isMissingTableError(errMsg)) {
+      const customers = Array.from(memoryCustomers.values());
+      return {
+        source: 'memory',
+        warning:
+          'Supabase 연결은 되었으나 테이블이 아직 없습니다. Supabase SQL Editor에서 supabase_schema.sql과 supabase_gate.sql을 실행해 주세요.',
+        totalCustomers: customers.length,
+        totalPayments: memoryPayments.length,
+        totalInteriorCredits: customers.reduce((sum, c) => sum + c.interior_credits, 0),
+        totalContractCredits: customers.reduce((sum, c) => sum + c.contract_credits, 0),
+        todayFreeUsage: 0,
+        payments: memoryPayments,
+      };
+    }
+    throw new Error(errMsg);
+  }
 
   const customers = customersRes.data || [];
   const payments = (paymentsRes.data || []) as PaymentRecord[];
