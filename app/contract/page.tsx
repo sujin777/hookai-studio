@@ -25,6 +25,35 @@ interface AttachedFile {
   sizeLabel: string;
   mimeType: string;
   base64: string;
+  isImage: boolean;
+}
+
+function compressContractPhoto(file: File, maxDim = 1600, quality = 0.88): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read photo.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Invalid image file.'));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const width = Math.round(img.width * scale);
+        const height = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(reader.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function ContractAppPage() {
@@ -41,7 +70,19 @@ export default function ContractAppPage() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const priceId = process.env.NEXT_PUBLIC_PADDLE_PRICE_CONTRACT || 'pri_contract_pack';
+
+  const cameraBtnLabel =
+    locale === 'ko'
+      ? '📷 카메라로 찍기'
+      : locale === 'ja'
+      ? '📷 カメラで撮影'
+      : locale === 'es'
+      ? '📷 Tomar Foto'
+      : locale === 'zh'
+      ? '📷 拍照上传'
+      : '📷 Take Photo';
 
   const pasteLabel =
     locale === 'ko'
@@ -122,23 +163,40 @@ export default function ContractAppPage() {
       return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
+    if (file.size > 12 * 1024 * 1024) {
       setErrorMsg(
-        locale === 'ko' ? '파일 크기는 8MB 이하만 가능합니다.' : 'File size must be under 8MB.'
+        locale === 'ko' ? '파일 크기는 12MB 이하만 가능합니다.' : 'File size must be under 12MB.'
       );
+      return;
+    }
+
+    const isImage =
+      file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(lowerName);
+
+    if (isImage) {
+      try {
+        const compressed = await compressContractPhoto(file);
+        setAttachedFile({
+          name: file.name || 'contract-photo.jpg',
+          sizeLabel: `${Math.max(1, Math.round((compressed.length * 0.75) / 1024))} KB`,
+          mimeType: 'image/jpeg',
+          base64: compressed,
+          isImage: true,
+        });
+      } catch {
+        setErrorMsg(locale === 'ko' ? '사진을 처리할 수 없습니다.' : 'Could not process photo.');
+      }
       return;
     }
 
     const reader = new FileReader();
     reader.onload = () => {
-      const mimeType =
-        file.type ||
-        (lowerName.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
       setAttachedFile({
         name: file.name,
         sizeLabel: `${Math.max(1, Math.round(file.size / 1024))} KB`,
-        mimeType,
+        mimeType: file.type || 'application/pdf',
         base64: reader.result as string,
+        isImage: false,
       });
     };
     reader.readAsDataURL(file);
@@ -245,6 +303,17 @@ export default function ContractAppPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) processFile(f);
+                }}
+                className="hidden"
+              />
+              <input
                 ref={fileInputRef}
                 type="file"
                 accept=".txt,.md,.csv,.json,.pdf,image/*"
@@ -254,6 +323,13 @@ export default function ContractAppPage() {
                 }}
                 className="hidden"
               />
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="min-h-[38px] text-xs font-bold text-white px-3 py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
+              >
+                {cameraBtnLabel}
+              </button>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -301,18 +377,27 @@ export default function ContractAppPage() {
             }`}
           >
             {attachedFile && (
-              <div className="mb-2.5 flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200/80 text-xs">
-                <span className="font-bold text-indigo-950 truncate">
-                  📄 {attachedFile.name}{' '}
-                  <span className="font-medium text-indigo-600">({attachedFile.sizeLabel})</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setAttachedFile(null)}
-                  className="text-indigo-500 hover:text-indigo-900 font-black px-1.5 cursor-pointer"
-                >
-                  ✕
-                </button>
+              <div className="mb-2.5 p-3 rounded-xl bg-indigo-50 border border-indigo-200/80 text-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-indigo-950 truncate">
+                    {attachedFile.isImage ? '📷' : '📄'} {attachedFile.name}{' '}
+                    <span className="font-medium text-indigo-600">({attachedFile.sizeLabel})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedFile(null)}
+                    className="text-indigo-500 hover:text-indigo-900 font-black px-1.5 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {attachedFile.isImage && (
+                  <img
+                    src={attachedFile.base64}
+                    alt="Contract photo preview"
+                    className="max-h-48 rounded-lg border border-indigo-200/60 object-contain bg-white"
+                  />
+                )}
               </div>
             )}
 
