@@ -65,14 +65,14 @@ export function LanguageSelector() {
     <div
       role="group"
       aria-label="Language switcher"
-      className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 text-xs font-semibold"
+      className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 text-[11px] font-semibold shrink-0"
     >
       {SUPPORTED_LOCALES.map((item) => (
         <button
           key={item.code}
           type="button"
           onClick={() => setLocale(item.code)}
-          className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+          className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
             locale === item.code
               ? 'bg-white text-zinc-950 shadow-2xs'
               : 'text-zinc-400 hover:text-zinc-700'

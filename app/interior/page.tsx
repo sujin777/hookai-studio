@@ -183,7 +183,7 @@ export default function InteriorAppPage() {
   return (
     <div className="min-h-screen bg-[#FAFAFA] text-zinc-900 flex flex-col selection:bg-zinc-900 selection:text-white">
       <PaddleBar
-        appName={`${t.interiorAppName} · 360° XR`}
+        appName="RoomTransform 3D"
         priceId={priceId}
         priceLabel={t.interiorPriceLabel}
         email={email}

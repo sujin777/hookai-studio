@@ -185,37 +185,41 @@ export function PaddleBar({
       )}
 
       <header className="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/80 backdrop-blur-md">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 min-h-14 py-2 flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <Link
               href="/"
-              className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-950 transition-colors"
+              className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-950 transition-colors whitespace-nowrap shrink-0"
             >
-              <span className="w-6 h-6 rounded-md bg-zinc-950 text-white flex items-center justify-center font-black text-[11px]">
+              <span className="w-7 h-7 rounded-lg bg-zinc-950 text-white flex items-center justify-center font-black text-xs shadow-2xs">
                 H
               </span>
-              <span className="hidden sm:inline">{t.backToHub}</span>
+              <span className="hidden xl:inline">{t.backToHub}</span>
             </Link>
-            <span className="text-zinc-200">/</span>
-            <span className="font-bold text-xs sm:text-sm text-zinc-950 tracking-tight">{appName}</span>
+            <span className="text-zinc-200 hidden sm:inline">/</span>
+            <span className="font-bold text-xs sm:text-sm text-zinc-950 tracking-tight truncate">
+              {appName}
+            </span>
             {remainingCredits !== null && (remainingCredits > 0 || loggedInEmail) && (
               <span
-                className={`px-2.5 py-0.5 text-[11px] font-bold rounded-full border ${
+                className={`px-2 py-0.5 text-[11px] font-bold rounded-full border whitespace-nowrap shrink-0 ${
                   remainingCredits > 0
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
                     : 'bg-zinc-100 text-zinc-600 border-zinc-200'
                 }`}
               >
-                {remainingCredits} {t.proCreditsActive}
+                {remainingCredits}
+                <span className="hidden xl:inline"> {t.proCreditsActive}</span>
+                <span className="xl:hidden"> {locale === 'ko' ? '크레딧' : 'cr'}</span>
               </span>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 shrink-0">
             <LanguageSelector />
             {loggedInEmail ? (
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 text-xs">
-                <span className="font-semibold text-zinc-800 max-w-[140px] truncate">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 bg-zinc-50 text-[11px] whitespace-nowrap">
+                <span className="font-semibold text-zinc-800 max-w-[100px] sm:max-w-[130px] truncate">
                   {loggedInEmail}
                 </span>
                 <button
@@ -230,7 +234,7 @@ export function PaddleBar({
               <button
                 type="button"
                 onClick={() => setAuthOpen(!authOpen)}
-                className="text-xs font-semibold text-zinc-700 hover:text-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer"
+                className="text-[11px] font-semibold text-zinc-700 hover:text-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer whitespace-nowrap"
               >
                 {authBtnLabel}
               </button>
@@ -238,9 +242,9 @@ export function PaddleBar({
             <button
               type="button"
               onClick={openCheckout}
-              className="text-xs font-bold bg-zinc-950 text-white px-3.5 py-2 rounded-xl hover:bg-zinc-800 transition-colors cursor-pointer shadow-2xs"
+              className="text-[11px] font-bold bg-zinc-950 text-white px-3 py-1.5 rounded-xl hover:bg-zinc-800 transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
             >
-              {t.unlockProPack} ({priceLabel})
+              {t.unlockProPack} ({priceLabel.split('/')[0].trim()})
             </button>
           </div>
         </div>
