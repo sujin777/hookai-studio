@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { PaddleBar } from '@/components/PaddleBar';
 import { useLanguage } from '@/components/LanguageProvider';
 import { getPaddleLocale } from '@/lib/i18n';
@@ -20,10 +20,19 @@ interface ScanReport {
   remainingCredits: number;
 }
 
+interface AttachedFile {
+  name: string;
+  sizeLabel: string;
+  mimeType: string;
+  base64: string;
+}
+
 export default function ContractAppPage() {
   const { locale, t } = useLanguage();
   const [email, setEmail] = useState('');
   const [text, setText] = useState('');
+  const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [report, setReport] = useState<ScanReport | null>(null);
   const [remainingCredits, setRemainingCredits] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,11 +40,119 @@ export default function ContractAppPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const priceId = process.env.NEXT_PUBLIC_PADDLE_PRICE_CONTRACT || 'pri_contract_pack';
 
-  const pasteLabel = locale === 'ko' ? '📋 클립보드 붙여넣기' : locale === 'ja' ? '📋 貼り付け' : locale === 'es' ? '📋 Pegar' : locale === 'zh' ? '📋 粘贴剪贴板' : '📋 Paste';
-  const copyLabel = locale === 'ko' ? '복사' : locale === 'ja' ? 'コピー' : locale === 'es' ? 'Copiar' : locale === 'zh' ? '复制' : 'Copy';
-  const copiedLabel = locale === 'ko' ? '복사됨 ✓' : locale === 'ja' ? '完了 ✓' : locale === 'es' ? 'Copiado ✓' : locale === 'zh' ? '已复制 ✓' : 'Copied ✓';
+  const pasteLabel =
+    locale === 'ko'
+      ? '📋 붙여넣기'
+      : locale === 'ja'
+      ? '📋 貼り付け'
+      : locale === 'es'
+      ? '📋 Pegar'
+      : locale === 'zh'
+      ? '📋 粘贴'
+      : '📋 Paste';
+  const fileBtnLabel =
+    locale === 'ko'
+      ? '📁 파일 올리기'
+      : locale === 'ja'
+      ? '📁 ファイル選択'
+      : locale === 'es'
+      ? '📁 Subir Archivo'
+      : locale === 'zh'
+      ? '📁 上传文件'
+      : '📁 Upload File';
+  const dropHintLabel =
+    locale === 'ko'
+      ? '여기에 계약서 파일(TXT · MD · PDF · 사진)을 끌어다 놓으세요'
+      : locale === 'ja'
+      ? '契約書ファイル (TXT · MD · PDF · 画像) をここにドロップ'
+      : locale === 'es'
+      ? 'Arrastra aquí tu archivo de contrato (TXT · MD · PDF · Imagen)'
+      : locale === 'zh'
+      ? '将合同文件 (TXT · MD · PDF · 图片) 拖放到此处'
+      : 'Drag & drop contract file here (TXT · MD · PDF · Image)';
+  const copyLabel =
+    locale === 'ko'
+      ? '복사'
+      : locale === 'ja'
+      ? 'コピー'
+      : locale === 'es'
+      ? 'Copiar'
+      : locale === 'zh'
+      ? '复制'
+      : 'Copy';
+  const copiedLabel =
+    locale === 'ko'
+      ? '복사됨 ✓'
+      : locale === 'ja'
+      ? '完了 ✓'
+      : locale === 'es'
+      ? 'Copiado ✓'
+      : locale === 'zh'
+      ? '已复制 ✓'
+      : 'Copied ✓';
+
+  const processFile = async (file: File) => {
+    setErrorMsg('');
+    const lowerName = file.name.toLowerCase();
+    const isTextFile =
+      file.type.startsWith('text/') ||
+      /\.(txt|md|csv|json|log|rtf|html)$/i.test(lowerName);
+
+    if (isTextFile) {
+      const content = await file.text();
+      setText(content);
+      setAttachedFile(null);
+      return;
+    }
+
+    const isPdfOrImage =
+      file.type === 'application/pdf' ||
+      file.type.startsWith('image/') ||
+      /\.(pdf|png|jpe?g|webp)$/i.test(lowerName);
+
+    if (!isPdfOrImage) {
+      setErrorMsg(
+        locale === 'ko'
+          ? 'TXT, MD, PDF 또는 이미지(JPG/PNG) 파일만 지원됩니다.'
+          : 'Supported files: TXT, MD, PDF, or images (JPG/PNG).'
+      );
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setErrorMsg(
+        locale === 'ko' ? '파일 크기는 8MB 이하만 가능합니다.' : 'File size must be under 8MB.'
+      );
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const mimeType =
+        file.type ||
+        (lowerName.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+      setAttachedFile({
+        name: file.name,
+        sizeLabel: `${Math.max(1, Math.round(file.size / 1024))} KB`,
+        mimeType,
+        base64: reader.result as string,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processFile(file);
+    }
+  };
 
   const handlePaste = async () => {
     try {
@@ -57,7 +174,7 @@ export default function ContractAppPage() {
   };
 
   const handleScan = async () => {
-    if (text.trim().length < 20) {
+    if (text.trim().length < 20 && !attachedFile) {
       alert(t.contractPasteFirst);
       return;
     }
@@ -69,7 +186,13 @@ export default function ContractAppPage() {
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contractText: text, userEmail: email, locale }),
+        body: JSON.stringify({
+          contractText: text,
+          fileBase64: attachedFile?.base64 || '',
+          fileMimeType: attachedFile?.mimeType || '',
+          userEmail: email,
+          locale,
+        }),
       });
       const data = await res.json();
 
@@ -120,7 +243,24 @@ export default function ContractAppPage() {
                 {t.contractTitle}
               </h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.md,.csv,.json,.pdf,image/*"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) processFile(f);
+                }}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="min-h-[38px] text-xs font-semibold text-zinc-700 hover:text-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer shrink-0"
+              >
+                {fileBtnLabel}
+              </button>
               <button
                 type="button"
                 onClick={handlePaste}
@@ -130,7 +270,10 @@ export default function ContractAppPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setText(t.contractSampleText)}
+                onClick={() => {
+                  setAttachedFile(null);
+                  setText(t.contractSampleText);
+                }}
                 className="min-h-[38px] text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-3 py-1.5 rounded-lg bg-indigo-50/70 hover:bg-indigo-100/70 transition-colors cursor-pointer shrink-0"
               >
                 {t.contractLoadSample}
@@ -138,13 +281,57 @@ export default function ContractAppPage() {
             </div>
           </div>
 
-          <textarea
-            rows={7}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={t.contractPlaceholder}
-            className="w-full p-4 rounded-2xl border border-zinc-200 bg-zinc-50/50 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400 transition-all"
-          />
+          {/* Drag & Drop File Zone wrapping Textarea */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragging(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragging(false);
+            }}
+            onDrop={handleDrop}
+            className={`relative rounded-2xl border-2 transition-all ${
+              isDragging
+                ? 'border-dashed border-indigo-500 bg-indigo-50/50'
+                : 'border-transparent'
+            }`}
+          >
+            {attachedFile && (
+              <div className="mb-2.5 flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200/80 text-xs">
+                <span className="font-bold text-indigo-950 truncate">
+                  📄 {attachedFile.name}{' '}
+                  <span className="font-medium text-indigo-600">({attachedFile.sizeLabel})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAttachedFile(null)}
+                  className="text-indigo-500 hover:text-indigo-900 font-black px-1.5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <textarea
+              rows={7}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={`${t.contractPlaceholder}\n(${dropHintLabel})`}
+              className="w-full p-4 rounded-2xl border border-zinc-200 bg-zinc-50/50 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400 transition-all"
+            />
+
+            {isDragging && (
+              <div className="pointer-events-none absolute inset-0 rounded-2xl bg-indigo-50/85 backdrop-blur-[1px] flex items-center justify-center">
+                <span className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold shadow-md">
+                  {dropHintLabel}
+                </span>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -182,7 +369,10 @@ export default function ContractAppPage() {
               </div>
 
               {report.clauses.map((c, idx) => (
-                <div key={idx} className="border border-zinc-200/90 rounded-2xl p-4 sm:p-5 bg-zinc-50/60 space-y-2.5">
+                <div
+                  key={idx}
+                  className="border border-zinc-200/90 rounded-2xl p-4 sm:p-5 bg-zinc-50/60 space-y-2.5"
+                >
                   <div className="flex justify-between items-center gap-2">
                     <span className="font-bold text-sm sm:text-base text-zinc-950">
                       #{idx + 1} {c.title}

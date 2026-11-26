@@ -19,12 +19,21 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { contractText, userEmail, locale: bodyLocale } = body;
+    const {
+      contractText = '',
+      fileBase64 = '',
+      fileMimeType = '',
+      userEmail,
+      locale: bodyLocale,
+    } = body;
     locale = detectLocale(bodyLocale || req.headers.get('accept-language'));
     const msg = getApiMessages(locale);
     const targetLang = getAiLanguageName(locale);
 
-    if (!contractText || contractText.trim().length < 20) {
+    const hasText = typeof contractText === 'string' && contractText.trim().length >= 20;
+    const hasFile = typeof fileBase64 === 'string' && fileBase64.length > 50 && Boolean(fileMimeType);
+
+    if (!hasText && !hasFile) {
       return NextResponse.json({ error: msg.contractTooShort }, { status: 400 });
     }
 
@@ -44,9 +53,22 @@ export async function POST(req: NextRequest) {
     }
     consumedFreePreview = access.tier === 'free_preview';
 
+    const instruction = `Analyze the following contract and identify the top 3 toxic or unfair clauses. Write the summary, clause titles, plain-language risk explanations, and copy-paste safe counter-clauses naturally in ${targetLang} (keep severity enum values strictly HIGH, MEDIUM, or LOW).`;
+
+    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+    if (hasFile) {
+      const cleanBase64 = fileBase64.replace(/^data:[^;]+;base64,/, '');
+      parts.push({ inlineData: { mimeType: fileMimeType, data: cleanBase64 } });
+    }
+    parts.push({
+      text: hasText
+        ? `${instruction}\n\n[Contract Text]\n${contractText.slice(0, 12000)}`
+        : instruction,
+    });
+
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
-      contents: `Analyze the following contract text and identify the top 3 toxic or unfair clauses. Write the summary, clause titles, plain-language risk explanations, and copy-paste safe counter-clauses naturally in ${targetLang} (keep severity enum values strictly HIGH, MEDIUM, or LOW).\n\n[Contract Text]\n${contractText.slice(0, 12000)}`,
+      contents: parts,
       config: {
         responseMimeType: 'application/json',
         responseSchema: {
