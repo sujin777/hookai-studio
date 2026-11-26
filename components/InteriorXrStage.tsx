@@ -63,9 +63,9 @@ function ProceduralRoom({ imageUrl, styleName }: { imageUrl: string; styleName: 
       <mesh position={[0, 1.45, -2.48]}>
         <planeGeometry args={[4.4, 2.5]} />
         {texture ? (
-          <meshStandardMaterial map={texture} roughness={0.35} />
+          <meshStandardMaterial key="art-loaded" map={texture} roughness={0.35} />
         ) : (
-          <meshStandardMaterial color="#27272a" roughness={0.5} />
+          <meshStandardMaterial key="art-empty" color="#27272a" roughness={0.5} />
         )}
       </mesh>
 

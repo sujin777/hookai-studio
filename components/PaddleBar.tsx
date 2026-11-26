@@ -117,6 +117,8 @@ export function PaddleBar({
                   if (customerEmail) {
                     onEmailChange(customerEmail);
                   }
+                } else if (event.name === 'checkout.error') {
+                  console.error('[Paddle Checkout Error]', JSON.stringify(event));
                 }
               },
             });

@@ -50,7 +50,7 @@ export default function InteriorAppPage() {
   const [selectedStyle, setSelectedStyle] = useState('Modern Boutique Hotel');
   const [previewSrc, setPreviewSrc] = useState<string>('');
   const [resultUrl, setResultUrl] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'2d' | '360'>('360');
+  const [viewMode, setViewMode] = useState<'2d' | '360'>('2d');
   const [isWatermarked, setIsWatermarked] = useState(false);
   const [remainingCredits, setRemainingCredits] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -162,7 +162,7 @@ export default function InteriorAppPage() {
         setResultUrl(data.resultImageUrl);
         setIsWatermarked(Boolean(data.isWatermarked));
         setRemainingCredits(data.remainingCredits);
-        setViewMode('360');
+        setViewMode('2d');
         try {
           sessionStorage.setItem('hookai_last_room_img', data.resultImageUrl);
           sessionStorage.setItem('hookai_last_room_style', selectedStyle);

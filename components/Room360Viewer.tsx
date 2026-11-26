@@ -23,26 +23,37 @@ function PanoramaDome({ imageUrl }: { imageUrl: string }) {
       setTexture(null);
       return;
     }
-    const loader = new THREE.TextureLoader();
-    loader.load(imageUrl, (loaded) => {
-      loaded.colorSpace = THREE.SRGBColorSpace;
-      // 360° 구에 감쌀 때 뒷면 이음새가 부드럽게 이어지도록 미러링 래핑 적용
-      loaded.wrapS = THREE.MirroredRepeatWrapping;
-      loaded.wrapT = THREE.ClampToEdgeWrapping;
-      loaded.repeat.set(2, 1);
-      loaded.needsUpdate = true;
-      setTexture(loaded);
-    });
+
+    let disposed = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (disposed) return;
+      const tex = new THREE.Texture(img);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      // 비-2의 거듭제곱(NPOT) 16:9 이미지에서도 WebGL 검은 화면이 나지 않도록 ClampToEdge + LinearFilter 사용
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = false;
+      tex.needsUpdate = true;
+      setTexture(tex);
+    };
+    img.src = imageUrl;
+
+    return () => {
+      disposed = true;
+    };
   }, [imageUrl]);
 
   return (
-    // scale={[-1, 1, 1]}로 좌우 반전을 보정하여 구 안쪽에서 정방향으로 보이게 처리
     <mesh scale={[-1, 1, 1]}>
       <sphereGeometry args={[10, 64, 48]} />
       {texture ? (
-        <meshBasicMaterial map={texture} side={THREE.BackSide} />
+        <meshBasicMaterial key="loaded" map={texture} side={THREE.DoubleSide} />
       ) : (
-        <meshBasicMaterial color="#18181b" side={THREE.BackSide} />
+        <meshBasicMaterial key="loading" color="#18181b" side={THREE.DoubleSide} />
       )}
     </mesh>
   );
@@ -118,8 +129,8 @@ export default function Room360Viewer({
       {/* 360° WebGL / WebXR 캔버스 */}
       <Canvas dpr={[1, 1.5]} camera={{ position: [0, 0, 0.1], fov: 75 }}>
         <XR store={xrStore}>
+          <color attach="background" args={['#18181b']} />
           <PanoramaDome imageUrl={imageUrl} />
-          {/* rotateSpeed를 음수(-0.45)로 설정해야 스마트폰 터치 시 실제 고개를 돌리는 방향과 일치 */}
           <OrbitControls
             enableZoom={true}
             enablePan={false}
