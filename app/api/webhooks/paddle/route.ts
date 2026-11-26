@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/lib/creditGate';
+import { getMemoryStore, getSupabaseAdmin, isMissingTableError } from '@/lib/creditGate';
 
 function verifyPaddleSignature(rawBody: string, signatureHeader: string | null, secret: string): boolean {
   if (!signatureHeader || !secret) return false;
@@ -67,9 +67,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ignored: 'Unknown price_id' });
     }
 
+    const creditMemoryFallback = () => {
+      const store = getMemoryStore();
+      const cleanEmail = email.toLowerCase().trim();
+      if (store.payments.some((p) => p.transaction_id === txId)) {
+        return { ok: true, duplicate: true };
+      }
+      const now = new Date().toISOString();
+      store.payments.unshift({
+        transaction_id: txId,
+        email: cleanEmail,
+        app_type: appType!,
+        credits_added: credits,
+        created_at: now,
+      });
+      const existing = store.customers.get(cleanEmail) || {
+        email: cleanEmail,
+        interior_credits: 0,
+        contract_credits: 0,
+        created_at: now,
+        updated_at: now,
+      };
+      if (appType === 'interior') existing.interior_credits += credits;
+      else existing.contract_credits += credits;
+      existing.updated_at = now;
+      store.customers.set(cleanEmail, existing);
+      return { ok: true, result: existing };
+    };
+
     const supabaseAdmin = getSupabaseAdmin();
     if (!supabaseAdmin) {
-      return NextResponse.json({ ok: true, warning: 'Supabase not configured' });
+      return NextResponse.json(creditMemoryFallback());
     }
 
     const { data, error } = await supabaseAdmin.rpc('add_app_credits', {
@@ -80,6 +108,9 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
+      if (isMissingTableError(error.message)) {
+        return NextResponse.json(creditMemoryFallback());
+      }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 

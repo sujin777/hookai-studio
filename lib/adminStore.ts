@@ -1,20 +1,13 @@
-import { getSupabaseAdmin } from '@/lib/creditGate';
+import {
+  getMemoryStore,
+  getSupabaseAdmin,
+  isMissingTableError,
+  MemoryCustomer,
+  MemoryPayment,
+} from '@/lib/creditGate';
 
-export interface CustomerRecord {
-  email: string;
-  interior_credits: number;
-  contract_credits: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PaymentRecord {
-  transaction_id: string;
-  email: string;
-  app_type: string;
-  credits_added: number;
-  created_at: string;
-}
+export type CustomerRecord = MemoryCustomer;
+export type PaymentRecord = MemoryPayment;
 
 export interface AdminOverview {
   source: 'supabase' | 'memory';
@@ -27,25 +20,16 @@ export interface AdminOverview {
   payments: PaymentRecord[];
 }
 
-function isMissingTableError(message?: string): boolean {
-  if (!message) return false;
-  const lower = message.toLowerCase();
-  return lower.includes('schema cache') || lower.includes('does not exist') || lower.includes('relation');
-}
-
-// Local in-memory fallback when Supabase is not configured
-const memoryCustomers = new Map<string, CustomerRecord>();
-const memoryPayments: PaymentRecord[] = [];
-
 export async function listCustomers(query?: string): Promise<{
   source: 'supabase' | 'memory';
   customers: CustomerRecord[];
 }> {
   const supabase = getSupabaseAdmin();
   const q = query?.toLowerCase().trim() || '';
+  const store = getMemoryStore();
 
   if (!supabase) {
-    const all = Array.from(memoryCustomers.values())
+    const all = Array.from(store.customers.values())
       .filter((c) => !q || c.email.includes(q))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
     return { source: 'memory', customers: all };
@@ -64,7 +48,7 @@ export async function listCustomers(query?: string): Promise<{
   const { data, error } = await builder;
   if (error) {
     if (isMissingTableError(error.message)) {
-      const all = Array.from(memoryCustomers.values())
+      const all = Array.from(store.customers.values())
         .filter((c) => !q || c.email.includes(q))
         .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
       return { source: 'memory', customers: all };
@@ -83,10 +67,10 @@ export async function createCustomer(input: {
   const interior_credits = Math.max(0, Math.floor(Number(input.interior_credits) || 0));
   const contract_credits = Math.max(0, Math.floor(Number(input.contract_credits) || 0));
   const now = new Date().toISOString();
+  const store = getMemoryStore();
 
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    if (memoryCustomers.has(email)) {
+  const createInMemory = () => {
+    if (store.customers.has(email)) {
       throw new Error('Customer email already exists.');
     }
     const record: CustomerRecord = {
@@ -96,9 +80,12 @@ export async function createCustomer(input: {
       created_at: now,
       updated_at: now,
     };
-    memoryCustomers.set(email, record);
+    store.customers.set(email, record);
     return record;
-  }
+  };
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return createInMemory();
 
   const { data: existing, error: findErr } = await supabase
     .from('user_credits')
@@ -107,16 +94,7 @@ export async function createCustomer(input: {
     .maybeSingle();
 
   if (findErr && isMissingTableError(findErr.message)) {
-    if (memoryCustomers.has(email)) throw new Error('Customer email already exists.');
-    const record: CustomerRecord = {
-      email,
-      interior_credits,
-      contract_credits,
-      created_at: now,
-      updated_at: now,
-    };
-    memoryCustomers.set(email, record);
-    return record;
+    return createInMemory();
   }
 
   if (existing) {
@@ -142,10 +120,10 @@ export async function updateCustomer(input: {
   const interior_credits = Math.max(0, Math.floor(Number(input.interior_credits) || 0));
   const contract_credits = Math.max(0, Math.floor(Number(input.contract_credits) || 0));
   const now = new Date().toISOString();
+  const store = getMemoryStore();
 
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    const existing = memoryCustomers.get(email);
+  const updateInMemory = () => {
+    const existing = store.customers.get(email);
     if (!existing) throw new Error('Customer not found.');
     const updated: CustomerRecord = {
       ...existing,
@@ -153,9 +131,12 @@ export async function updateCustomer(input: {
       contract_credits,
       updated_at: now,
     };
-    memoryCustomers.set(email, updated);
+    store.customers.set(email, updated);
     return updated;
-  }
+  };
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return updateInMemory();
 
   const { data, error } = await supabase
     .from('user_credits')
@@ -164,39 +145,57 @@ export async function updateCustomer(input: {
     .select('email, interior_credits, contract_credits, created_at, updated_at')
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isMissingTableError(error.message)) return updateInMemory();
+    throw new Error(error.message);
+  }
   return data as CustomerRecord;
 }
 
 export async function deleteCustomer(emailInput: string): Promise<void> {
   const email = emailInput.toLowerCase().trim();
-  const supabase = getSupabaseAdmin();
+  const store = getMemoryStore();
 
-  if (!supabase) {
-    if (!memoryCustomers.delete(email)) {
+  const deleteInMemory = () => {
+    if (!store.customers.delete(email)) {
       throw new Error('Customer not found.');
     }
+  };
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    deleteInMemory();
     return;
   }
 
   const { error } = await supabase.from('user_credits').delete().eq('email', email);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isMissingTableError(error.message)) {
+      deleteInMemory();
+      return;
+    }
+    throw new Error(error.message);
+  }
 }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    const customers = Array.from(memoryCustomers.values());
+  const store = getMemoryStore();
+  const memoryOverview = (warning?: string): AdminOverview => {
+    const customers = Array.from(store.customers.values());
     return {
       source: 'memory',
+      warning,
       totalCustomers: customers.length,
-      totalPayments: memoryPayments.length,
+      totalPayments: store.payments.length,
       totalInteriorCredits: customers.reduce((sum, c) => sum + c.interior_credits, 0),
       totalContractCredits: customers.reduce((sum, c) => sum + c.contract_credits, 0),
-      todayFreeUsage: 0,
-      payments: memoryPayments,
+      todayFreeUsage: store.dailyFreeUsage.size,
+      payments: store.payments,
     };
-  }
+  };
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return memoryOverview();
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -216,18 +215,9 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   if (customersRes.error || paymentsRes.error) {
     const errMsg = customersRes.error?.message || paymentsRes.error?.message || '';
     if (isMissingTableError(errMsg)) {
-      const customers = Array.from(memoryCustomers.values());
-      return {
-        source: 'memory',
-        warning:
-          'Supabase 연결은 되었으나 테이블이 아직 없습니다. Supabase SQL Editor에서 supabase_schema.sql과 supabase_gate.sql을 실행해 주세요.',
-        totalCustomers: customers.length,
-        totalPayments: memoryPayments.length,
-        totalInteriorCredits: customers.reduce((sum, c) => sum + c.interior_credits, 0),
-        totalContractCredits: customers.reduce((sum, c) => sum + c.contract_credits, 0),
-        todayFreeUsage: 0,
-        payments: memoryPayments,
-      };
+      return memoryOverview(
+        'Supabase 연결은 되었으나 테이블이 아직 없습니다. Supabase SQL Editor에서 supabase_schema.sql과 supabase_gate.sql을 실행해 주세요.'
+      );
     }
     throw new Error(errMsg);
   }

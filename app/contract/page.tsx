@@ -105,6 +105,7 @@ export default function ContractAppPage() {
         email={email}
         onEmailChange={setEmail}
         remainingCredits={remainingCredits}
+        onCreditsUpdated={setRemainingCredits}
         targetPath="/contract"
       />
 

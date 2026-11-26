@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Script from 'next/script';
 import { LanguageSelector, useLanguage } from '@/components/LanguageProvider';
@@ -18,6 +18,7 @@ declare global {
         open: (opts: {
           items: Array<{ priceId: string; quantity: number }>;
           customer?: { email: string };
+          customData?: { email?: string };
           settings?: { displayMode?: string; theme?: string; locale?: string };
         }) => void;
       };
@@ -44,11 +45,38 @@ export function PaddleBar({
   onEmailChange,
   remainingCredits,
   targetPath,
+  onCreditsUpdated,
 }: PaddleBarProps) {
   const { locale, t } = useLanguage();
-  const [recoverOpen, setRecoverOpen] = useState(false);
-  const [recoverMsg, setRecoverMsg] = useState('');
-  const [recovering, setRecovering] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMsg, setAuthMsg] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [loggedInEmail, setLoggedInEmail] = useState('');
+
+  const isContract = targetPath.includes('/contract');
+
+  const syncSession = async () => {
+    try {
+      const res = await fetch('/api/auth');
+      const data = await res.json();
+      if (data.loggedIn && data.email) {
+        setLoggedInEmail(data.email);
+        onEmailChange(data.email);
+        const credits = isContract ? data.contract_credits : data.interior_credits;
+        onCreditsUpdated?.(credits ?? 0);
+      }
+    } catch {
+      // ignore session check errors
+    }
+  };
+
+  useEffect(() => {
+    syncSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetPath]);
 
   const clientToken = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN || '';
   const isPaddleConfigured =
@@ -63,9 +91,11 @@ export function PaddleBar({
       alert(t.paddleLoading);
       return;
     }
+    const activeEmail = loggedInEmail || email;
     window.Paddle.Checkout.open({
       items: [{ priceId, quantity: 1 }],
-      customer: email && email.includes('@') ? { email } : undefined,
+      customer: activeEmail && activeEmail.includes('@') ? { email: activeEmail } : undefined,
+      customData: activeEmail && activeEmail.includes('@') ? { email: activeEmail } : undefined,
       settings: {
         displayMode: 'overlay',
         theme: 'light',
@@ -74,28 +104,49 @@ export function PaddleBar({
     });
   };
 
-  const handleRecover = async (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setRecovering(true);
-    setRecoverMsg(t.checkingAccountMsg);
+    setAuthLoading(true);
+    setAuthMsg('');
     try {
-      const res = await fetch('/api/credits/recover', {
+      const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, targetPath }),
+        body: JSON.stringify({
+          mode: authMode,
+          email: authEmail,
+          password: authPassword,
+        }),
       });
       const data = await res.json();
-      setRecoverMsg(
-        data.ok
-          ? data.message || t.restoreSuccessFallback
-          : data.error || t.restoreFailed
-      );
+      if (res.ok && data.ok) {
+        setLoggedInEmail(data.email);
+        onEmailChange(data.email);
+        const credits = isContract ? data.contract_credits : data.interior_credits;
+        onCreditsUpdated?.(credits ?? 0);
+        setAuthOpen(false);
+        setAuthPassword('');
+      } else {
+        setAuthMsg(data.error || 'Authentication failed.');
+      }
     } catch {
-      setRecoverMsg(t.networkErrorRecover);
+      setAuthMsg('Network error.');
     } finally {
-      setRecovering(false);
+      setAuthLoading(false);
     }
   };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth', { method: 'DELETE' });
+    setLoggedInEmail('');
+    onEmailChange('');
+    onCreditsUpdated?.(0);
+  };
+
+  const authBtnLabel = locale === 'ko' ? '로그인 / 가입' : locale === 'ja' ? 'ログイン / 登録' : locale === 'es' ? 'Acceder / Registro' : locale === 'zh' ? '登录 / 注册' : 'Sign In / Join';
+  const loginTabLabel = locale === 'ko' ? '로그인' : 'Sign In';
+  const registerTabLabel = locale === 'ko' ? '간단 가입' : 'Quick Sign Up';
+  const logoutLabel = locale === 'ko' ? '로그아웃' : 'Sign Out';
 
   return (
     <>
@@ -117,6 +168,13 @@ export function PaddleBar({
                   if (customerEmail) {
                     onEmailChange(customerEmail);
                   }
+                  // Poll session/credits for up to 6s so webhook credits reflect immediately
+                  let attempts = 0;
+                  const timer = setInterval(async () => {
+                    attempts += 1;
+                    await syncSession();
+                    if (attempts >= 5) clearInterval(timer);
+                  }, 1200);
                 } else if (event.name === 'checkout.error') {
                   console.error('[Paddle Checkout Error]', JSON.stringify(event));
                 }
@@ -127,8 +185,8 @@ export function PaddleBar({
       )}
 
       <header className="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/80 backdrop-blur-md">
-        <div className="max-w-5xl mx-auto px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
             <Link
               href="/"
               className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-950 transition-colors"
@@ -139,60 +197,108 @@ export function PaddleBar({
               <span className="hidden sm:inline">{t.backToHub}</span>
             </Link>
             <span className="text-zinc-200">/</span>
-            <span className="font-bold text-sm text-zinc-950 tracking-tight">{appName}</span>
-            {remainingCredits !== null && remainingCredits > 0 && (
-              <span className="px-2.5 py-0.5 text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/70 rounded-full">
+            <span className="font-bold text-xs sm:text-sm text-zinc-950 tracking-tight">{appName}</span>
+            {remainingCredits !== null && (remainingCredits > 0 || loggedInEmail) && (
+              <span
+                className={`px-2.5 py-0.5 text-[11px] font-bold rounded-full border ${
+                  remainingCredits > 0
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
+                    : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+                }`}
+              >
                 {remainingCredits} {t.proCreditsActive}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <LanguageSelector />
-            <button
-              type="button"
-              onClick={() => setRecoverOpen(!recoverOpen)}
-              className="text-xs font-semibold text-zinc-600 hover:text-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer"
-            >
-              {t.restorePurchase}
-            </button>
+            {loggedInEmail ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 text-xs">
+                <span className="font-semibold text-zinc-800 max-w-[140px] truncate">
+                  {loggedInEmail}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="text-zinc-400 hover:text-zinc-900 font-bold cursor-pointer"
+                >
+                  {logoutLabel}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAuthOpen(!authOpen)}
+                className="text-xs font-semibold text-zinc-700 hover:text-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer"
+              >
+                {authBtnLabel}
+              </button>
+            )}
             <button
               type="button"
               onClick={openCheckout}
-              className="text-xs font-bold bg-zinc-950 text-white px-4 py-2 rounded-xl hover:bg-zinc-800 transition-colors cursor-pointer shadow-2xs"
+              className="text-xs font-bold bg-zinc-950 text-white px-3.5 py-2 rounded-xl hover:bg-zinc-800 transition-colors cursor-pointer shadow-2xs"
             >
               {t.unlockProPack} ({priceLabel})
             </button>
           </div>
         </div>
 
-        {recoverOpen && (
-          <form
-            onSubmit={handleRecover}
-            className="bg-zinc-50/95 border-t border-zinc-200/80 px-6 py-3"
-          >
-            <div className="max-w-5xl mx-auto flex flex-wrap items-center gap-3 text-sm">
-              <span className="text-xs font-medium text-zinc-600">{t.enterPurchaseEmail}</span>
+        {authOpen && !loggedInEmail && (
+          <div className="bg-zinc-50/95 border-t border-zinc-200/80 px-4 sm:px-6 py-3.5">
+            <form
+              onSubmit={handleAuthSubmit}
+              className="max-w-5xl mx-auto flex flex-wrap items-center gap-2.5 text-xs"
+            >
+              <div className="inline-flex rounded-lg bg-zinc-200/80 p-0.5 font-bold">
+                <button
+                  type="button"
+                  onClick={() => setAuthMode('login')}
+                  className={`px-2.5 py-1 rounded-md cursor-pointer ${
+                    authMode === 'login' ? 'bg-white text-zinc-950 shadow-2xs' : 'text-zinc-600'
+                  }`}
+                >
+                  {loginTabLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode('register')}
+                  className={`px-2.5 py-1 rounded-md cursor-pointer ${
+                    authMode === 'register' ? 'bg-white text-zinc-950 shadow-2xs' : 'text-zinc-600'
+                  }`}
+                >
+                  {registerTabLabel}
+                </button>
+              </div>
+
               <input
                 type="email"
                 required
-                value={email}
-                onChange={(e) => onEmailChange(e.target.value)}
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 text-xs w-64 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 w-48 sm:w-56 focus:outline-none"
+              />
+              <input
+                type="password"
+                required
+                minLength={4}
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder={locale === 'ko' ? '비밀번호 (4자 이상)' : 'Password (4+ chars)'}
+                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 w-40 focus:outline-none"
               />
               <button
                 type="submit"
-                disabled={recovering}
-                className="px-3.5 py-1.5 bg-zinc-950 text-white text-xs font-bold rounded-lg hover:bg-zinc-800 disabled:opacity-50 cursor-pointer"
+                disabled={authLoading}
+                className="px-4 py-1.5 bg-zinc-950 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:opacity-50 transition cursor-pointer"
               >
-                {recovering ? t.checking : t.sendRestoreLink}
+                {authLoading ? '...' : authMode === 'login' ? loginTabLabel : registerTabLabel}
               </button>
-              {recoverMsg && (
-                <span className="text-xs font-semibold text-indigo-600">{recoverMsg}</span>
-              )}
-            </div>
-          </form>
+              {authMsg && <span className="font-semibold text-rose-600">{authMsg}</span>}
+            </form>
+          </div>
         )}
       </header>
     </>

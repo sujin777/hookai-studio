@@ -189,6 +189,7 @@ export default function InteriorAppPage() {
         email={email}
         onEmailChange={setEmail}
         remainingCredits={remainingCredits}
+        onCreditsUpdated={setRemainingCredits}
         targetPath="/interior"
       />
 

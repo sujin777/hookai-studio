@@ -9,6 +9,12 @@ create table if not exists public.user_credits (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.customer_accounts (
+  email text primary key,
+  password_hash text not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.paddle_transactions (
   transaction_id text primary key,
   email text not null,
