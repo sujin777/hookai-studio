@@ -27,10 +27,17 @@ export interface MemoryPayment {
   created_at: string;
 }
 
+export interface MemoryAccount {
+  passwordHash: string;
+  isVerified: boolean;
+  verificationToken?: string;
+  verificationExpiresAt?: number;
+}
+
 interface SharedMemoryStore {
   dailyFreeUsage: Map<string, string>;
   customers: Map<string, MemoryCustomer>;
-  accounts: Map<string, string>; // email -> password_hash
+  accounts: Map<string, MemoryAccount>;
   payments: MemoryPayment[];
 }
 
@@ -41,7 +48,7 @@ export function getMemoryStore(): SharedMemoryStore {
     globalForStore.__hookaiStore = {
       dailyFreeUsage: new Map<string, string>(),
       customers: new Map<string, MemoryCustomer>(),
-      accounts: new Map<string, string>(),
+      accounts: new Map<string, MemoryAccount>(),
       payments: [],
     };
   }

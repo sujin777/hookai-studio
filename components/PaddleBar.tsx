@@ -52,9 +52,14 @@ export function PaddleBar({
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
   const [authMsg, setAuthMsg] = useState('');
+  const [authOkMsg, setAuthOkMsg] = useState('');
+  const [verifyLink, setVerifyLink] = useState('');
+  const [canResend, setCanResend] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [loggedInEmail, setLoggedInEmail] = useState('');
+  const [justVerified, setJustVerified] = useState(false);
 
   const isContract = targetPath.includes('/contract');
 
@@ -75,6 +80,9 @@ export function PaddleBar({
 
   useEffect(() => {
     syncSession();
+    if (typeof window !== 'undefined' && window.location.search.includes('verified=1')) {
+      setJustVerified(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetPath]);
 
@@ -106,8 +114,21 @@ export function PaddleBar({
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthLoading(true);
     setAuthMsg('');
+    setAuthOkMsg('');
+    setVerifyLink('');
+    setCanResend(false);
+
+    if (authMode === 'register' && authPassword !== authConfirmPassword) {
+      setAuthMsg(
+        locale === 'ko'
+          ? '비밀번호와 비밀번호 확인이 일치하지 않습니다.'
+          : 'Passwords do not match.'
+      );
+      return;
+    }
+
+    setAuthLoading(true);
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
@@ -116,9 +137,27 @@ export function PaddleBar({
           mode: authMode,
           email: authEmail,
           password: authPassword,
+          confirmPassword: authConfirmPassword,
         }),
       });
       const data = await res.json();
+
+      if (res.ok && data.requiresVerification) {
+        setAuthOkMsg(
+          data.emailSent
+            ? locale === 'ko'
+              ? '인증 메일을 발송했습니다! 메일함의 링크를 클릭해 계정을 활성화해 주세요.'
+              : 'Verification email sent! Click the link in your inbox to activate your account.'
+            : locale === 'ko'
+            ? '가입이 접수되었습니다. 아래 활성화 링크를 눌러 이메일 인증을 완료해 주세요.'
+            : 'Account created! Click the activation link below to verify your email.'
+        );
+        if (data.previewVerifyUrl) setVerifyLink(data.previewVerifyUrl);
+        setAuthPassword('');
+        setAuthConfirmPassword('');
+        return;
+      }
+
       if (res.ok && data.ok) {
         setLoggedInEmail(data.email);
         onEmailChange(data.email);
@@ -126,11 +165,44 @@ export function PaddleBar({
         onCreditsUpdated?.(credits ?? 0);
         setAuthOpen(false);
         setAuthPassword('');
+        setAuthConfirmPassword('');
       } else {
         setAuthMsg(data.error || 'Authentication failed.');
+        if (data.requiresVerification) setCanResend(true);
       }
     } catch {
       setAuthMsg('Network error.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!authEmail) return;
+    setAuthLoading(true);
+    setAuthMsg('');
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'resend', email: authEmail }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setAuthOkMsg(
+          data.emailSent
+            ? locale === 'ko'
+              ? '인증 메일을 다시 발송했습니다!'
+              : 'Verification email resent!'
+            : locale === 'ko'
+            ? '새 활성화 링크가 준비되었습니다.'
+            : 'New activation link ready.'
+        );
+        if (data.previewVerifyUrl) setVerifyLink(data.previewVerifyUrl);
+        setCanResend(false);
+      } else {
+        setAuthMsg(data.error || 'Failed to resend.');
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -168,7 +240,6 @@ export function PaddleBar({
                   if (customerEmail) {
                     onEmailChange(customerEmail);
                   }
-                  // Poll session/credits for up to 6s so webhook credits reflect immediately
                   let attempts = 0;
                   const timer = setInterval(async () => {
                     attempts += 1;
@@ -249,16 +320,28 @@ export function PaddleBar({
           </div>
         </div>
 
+        {justVerified && (
+          <div className="bg-emerald-50 border-t border-emerald-200 px-4 sm:px-6 py-2 text-xs font-bold text-emerald-800 text-center">
+            {locale === 'ko'
+              ? '✓ 이메일 인증 및 계정 활성화가 완료되어 자동 로그인되었습니다.'
+              : '✓ Email verified and account activated!'}
+          </div>
+        )}
+
         {authOpen && !loggedInEmail && (
-          <div className="bg-zinc-50/95 border-t border-zinc-200/80 px-4 sm:px-6 py-3.5">
+          <div className="bg-zinc-50/95 border-t border-zinc-200/80 px-4 sm:px-6 py-3.5 space-y-2.5">
             <form
               onSubmit={handleAuthSubmit}
-              className="max-w-5xl mx-auto flex flex-wrap items-center gap-2.5 text-xs"
+              className="max-w-6xl mx-auto flex flex-wrap items-center gap-2 text-xs"
             >
               <div className="inline-flex rounded-lg bg-zinc-200/80 p-0.5 font-bold">
                 <button
                   type="button"
-                  onClick={() => setAuthMode('login')}
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthMsg('');
+                    setAuthOkMsg('');
+                  }}
                   className={`px-2.5 py-1 rounded-md cursor-pointer ${
                     authMode === 'login' ? 'bg-white text-zinc-950 shadow-2xs' : 'text-zinc-600'
                   }`}
@@ -267,7 +350,11 @@ export function PaddleBar({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAuthMode('register')}
+                  onClick={() => {
+                    setAuthMode('register');
+                    setAuthMsg('');
+                    setAuthOkMsg('');
+                  }}
                   className={`px-2.5 py-1 rounded-md cursor-pointer ${
                     authMode === 'register' ? 'bg-white text-zinc-950 shadow-2xs' : 'text-zinc-600'
                   }`}
@@ -282,7 +369,7 @@ export function PaddleBar({
                 value={authEmail}
                 onChange={(e) => setAuthEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 w-48 sm:w-56 focus:outline-none"
+                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 w-44 sm:w-52 focus:outline-none"
               />
               <input
                 type="password"
@@ -291,8 +378,19 @@ export function PaddleBar({
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
                 placeholder={locale === 'ko' ? '비밀번호 (4자 이상)' : 'Password (4+ chars)'}
-                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 w-40 focus:outline-none"
+                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 w-36 focus:outline-none"
               />
+              {authMode === 'register' && (
+                <input
+                  type="password"
+                  required
+                  minLength={4}
+                  value={authConfirmPassword}
+                  onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                  placeholder={locale === 'ko' ? '비밀번호 확인' : 'Confirm password'}
+                  className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 w-36 focus:outline-none"
+                />
+              )}
               <button
                 type="submit"
                 disabled={authLoading}
@@ -300,8 +398,32 @@ export function PaddleBar({
               >
                 {authLoading ? '...' : authMode === 'login' ? loginTabLabel : registerTabLabel}
               </button>
+
               {authMsg && <span className="font-semibold text-rose-600">{authMsg}</span>}
+              {canResend && (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  className="underline font-bold text-indigo-600 cursor-pointer"
+                >
+                  {locale === 'ko' ? '인증 메일 다시 보내기' : 'Resend Verification'}
+                </button>
+              )}
             </form>
+
+            {authOkMsg && (
+              <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-semibold">
+                <span>{authOkMsg}</span>
+                {verifyLink && (
+                  <a
+                    href={verifyLink}
+                    className="px-3 py-1 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+                  >
+                    {locale === 'ko' ? '이메일 활성화 바로 완료하기 →' : 'Activate Email Now →'}
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         )}
       </header>

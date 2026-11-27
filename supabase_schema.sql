@@ -12,8 +12,15 @@ create table if not exists public.user_credits (
 create table if not exists public.customer_accounts (
   email text primary key,
   password_hash text not null,
+  is_verified boolean not null default false,
+  verification_token text,
+  verification_expires_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.customer_accounts add column if not exists is_verified boolean not null default false;
+alter table public.customer_accounts add column if not exists verification_token text;
+alter table public.customer_accounts add column if not exists verification_expires_at timestamptz;
 
 create table if not exists public.paddle_transactions (
   transaction_id text primary key,
