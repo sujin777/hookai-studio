@@ -255,7 +255,66 @@ export default function HookAIHomePage() {
           </h1>
 
           <p className="text-base sm:text-lg text-zinc-500 leading-relaxed break-keep">
-            {t.heroSub}
+            {locale === 'ko' ? (
+              <>
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 font-black text-xl sm:text-2xl tracking-tight">
+                  방 사진 인테리어
+                </span>{' '}
+                변환부터{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-600 font-black text-xl sm:text-2xl tracking-tight">
+                  계약서
+                </span>{' '}
+                독소조항 분석까지.
+                <br className="hidden sm:inline" /> 매일 1회 무료로 먼저 경험하고, 필요한 만큼만 크레딧을 충전하세요.
+              </>
+            ) : locale === 'ja' ? (
+              <>
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 font-black text-xl sm:text-2xl tracking-tight">
+                  部屋の模様替え
+                </span>{' '}
+                から{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-600 font-black text-xl sm:text-2xl tracking-tight">
+                  契約書リスク診断
+                </span>{' '}
+                まで3秒で完了。毎日1回無料でお試しいただけます。
+              </>
+            ) : locale === 'es' ? (
+              <>
+                Desde{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 font-black text-xl sm:text-2xl tracking-tight">
+                  Diseño de Interiores
+                </span>{' '}
+                hasta{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-600 font-black text-xl sm:text-2xl tracking-tight">
+                  Contratos Legales
+                </span>{' '}
+                en 3 segundos. Prueba gratis cada día.
+              </>
+            ) : locale === 'zh' ? (
+              <>
+                3秒完成{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 font-black text-xl sm:text-2xl tracking-tight">
+                  房间室内改造
+                </span>{' '}
+                与{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-600 font-black text-xl sm:text-2xl tracking-tight">
+                  合同风险审查
+                </span>
+                。每天免费体验一次，按需购买积分。
+              </>
+            ) : (
+              <>
+                From{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 font-black text-xl sm:text-2xl tracking-tight">
+                  Room Interior AI
+                </span>{' '}
+                to{' '}
+                <span className="inline-block px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-600 font-black text-xl sm:text-2xl tracking-tight">
+                  Contract Risk Scan
+                </span>{' '}
+                in 3 seconds. Try once free every day.
+              </>
+            )}
           </p>
         </section>
 

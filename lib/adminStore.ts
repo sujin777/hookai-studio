@@ -157,6 +157,7 @@ export async function deleteCustomer(emailInput: string): Promise<void> {
   const store = getMemoryStore();
 
   const deleteInMemory = () => {
+    store.accounts.delete(email);
     if (!store.customers.delete(email)) {
       throw new Error('Customer not found.');
     }
@@ -168,6 +169,8 @@ export async function deleteCustomer(emailInput: string): Promise<void> {
     return;
   }
 
+  await supabase.from('customer_accounts').delete().eq('email', email);
+  await supabase.from('credit_recovery_tokens').delete().eq('email', email);
   const { error } = await supabase.from('user_credits').delete().eq('email', email);
   if (error) {
     if (isMissingTableError(error.message)) {

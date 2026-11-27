@@ -55,7 +55,6 @@ export function PaddleBar({
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
   const [authMsg, setAuthMsg] = useState('');
   const [authOkMsg, setAuthOkMsg] = useState('');
-  const [verifyLink, setVerifyLink] = useState('');
   const [canResend, setCanResend] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [loggedInEmail, setLoggedInEmail] = useState('');
@@ -116,7 +115,6 @@ export function PaddleBar({
     e.preventDefault();
     setAuthMsg('');
     setAuthOkMsg('');
-    setVerifyLink('');
     setCanResend(false);
 
     if (authMode === 'register' && authPassword !== authConfirmPassword) {
@@ -144,15 +142,10 @@ export function PaddleBar({
 
       if (res.ok && data.requiresVerification) {
         setAuthOkMsg(
-          data.emailSent
-            ? locale === 'ko'
-              ? '인증 메일을 발송했습니다! 메일함의 링크를 클릭해 계정을 활성화해 주세요.'
-              : 'Verification email sent! Click the link in your inbox to activate your account.'
-            : locale === 'ko'
-            ? '가입이 접수되었습니다. 아래 활성화 링크를 눌러 이메일 인증을 완료해 주세요.'
-            : 'Account created! Click the activation link below to verify your email.'
+          locale === 'ko'
+            ? `${authEmail} 메일함으로 인증 링크를 보냈습니다. 본인 이메일에서 인증 버튼을 클릭한 뒤 로그인해 주세요.`
+            : `Verification email sent to ${authEmail}. Please open your inbox and click the activation link.`
         );
-        if (data.previewVerifyUrl) setVerifyLink(data.previewVerifyUrl);
         setAuthPassword('');
         setAuthConfirmPassword('');
         return;
@@ -190,15 +183,10 @@ export function PaddleBar({
       const data = await res.json();
       if (res.ok && data.ok) {
         setAuthOkMsg(
-          data.emailSent
-            ? locale === 'ko'
-              ? '인증 메일을 다시 발송했습니다!'
-              : 'Verification email resent!'
-            : locale === 'ko'
-            ? '새 활성화 링크가 준비되었습니다.'
-            : 'New activation link ready.'
+          locale === 'ko'
+            ? `${authEmail} 메일함으로 인증 메일을 다시 발송했습니다!`
+            : `Verification email resent to ${authEmail}!`
         );
-        if (data.previewVerifyUrl) setVerifyLink(data.previewVerifyUrl);
         setCanResend(false);
       } else {
         setAuthMsg(data.error || 'Failed to resend.');
@@ -412,16 +400,8 @@ export function PaddleBar({
             </form>
 
             {authOkMsg && (
-              <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-semibold">
+              <div className="max-w-6xl mx-auto p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-semibold">
                 <span>{authOkMsg}</span>
-                {verifyLink && (
-                  <a
-                    href={verifyLink}
-                    className="px-3 py-1 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
-                  >
-                    {locale === 'ko' ? '이메일 활성화 바로 완료하기 →' : 'Activate Email Now →'}
-                  </a>
-                )}
               </div>
             )}
           </div>

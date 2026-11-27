@@ -95,11 +95,16 @@ export async function POST(req: NextRequest) {
 
       const verifyUrl = buildVerifyUrl(req, token);
       const emailRes = await sendVerificationEmail(email, verifyUrl);
+      if (!emailRes.sent) {
+        return NextResponse.json(
+          { error: emailRes.error || '이메일 발송에 실패했습니다.' },
+          { status: 503 }
+        );
+      }
       return NextResponse.json({
         ok: true,
         requiresVerification: true,
-        emailSent: emailRes.sent,
-        previewVerifyUrl: emailRes.previewUrl,
+        emailSent: true,
       });
     }
 
@@ -159,11 +164,17 @@ export async function POST(req: NextRequest) {
 
         const verifyUrl = buildVerifyUrl(req, token);
         const emailRes = await sendVerificationEmail(email, verifyUrl);
+        if (!emailRes.sent) {
+          store.accounts.delete(email);
+          return NextResponse.json(
+            { error: emailRes.error || '이메일 발송에 실패했습니다.' },
+            { status: 503 }
+          );
+        }
         return NextResponse.json({
           ok: true,
           requiresVerification: true,
-          emailSent: emailRes.sent,
-          previewVerifyUrl: emailRes.previewUrl,
+          emailSent: true,
         });
       } else {
         if (!existingAcc) {
@@ -229,11 +240,17 @@ export async function POST(req: NextRequest) {
         }
         const verifyUrl = buildVerifyUrl(req, token);
         const emailRes = await sendVerificationEmail(email, verifyUrl);
+        if (!emailRes.sent) {
+          store.accounts.delete(email);
+          return NextResponse.json(
+            { error: emailRes.error || '이메일 발송에 실패했습니다.' },
+            { status: 503 }
+          );
+        }
         return NextResponse.json({
           ok: true,
           requiresVerification: true,
-          emailSent: emailRes.sent,
-          previewVerifyUrl: emailRes.previewUrl,
+          emailSent: true,
         });
       } else {
         if (!existingAcc) {
