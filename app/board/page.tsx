@@ -13,6 +13,7 @@ interface BoardPost {
   title: string;
   content: string;
   image_data?: string | null;
+  is_active?: boolean;
   admin_reply?: string | null;
   admin_replied_at?: string | null;
   created_at: string;
@@ -172,6 +173,30 @@ export default function BoardPage() {
     });
     if (res.ok) {
       loadPosts(filterCat);
+    }
+  };
+
+  const handleTogglePostActive = async (id: string, isActive: boolean) => {
+    setReplyNotice('');
+    const res = await fetch('/api/board', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, isActive }),
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      setReplyNotice(
+        locale === 'ko'
+          ? isActive
+            ? '게시글이 활성화되었습니다.'
+            : '게시글이 비활성화되어 게시판에서 숨겨졌습니다.'
+          : isActive
+            ? 'Post enabled.'
+            : 'Post hidden from board.'
+      );
+      loadPosts(filterCat);
+    } else {
+      setReplyNotice(data.error || 'Failed to update post status.');
     }
   };
 
@@ -428,19 +453,48 @@ export default function BoardPage() {
                       <span className="text-xs font-semibold text-zinc-500">
                         {maskEmail(post.author_email)}
                       </span>
+                      {post.is_active === false && (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold">
+                          {locale === 'ko' ? '비활성화됨' : 'Disabled'}
+                        </span>
+                      )}
                       {post.admin_reply && (
                         <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
                           {locale === 'ko' ? '답변완료' : 'Replied'}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {isAdmin && (
+                        <div className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-bold">
+                          <label className="inline-flex items-center gap-1 cursor-pointer text-emerald-700">
+                            <input
+                              type="radio"
+                              name={`board-post-active-${post.id}`}
+                              checked={post.is_active !== false}
+                              onChange={() => handleTogglePostActive(post.id, true)}
+                              className="accent-emerald-600 cursor-pointer"
+                            />
+                            {locale === 'ko' ? '활성화' : 'Active'}
+                          </label>
+                          <label className="inline-flex items-center gap-1 cursor-pointer text-rose-600">
+                            <input
+                              type="radio"
+                              name={`board-post-active-${post.id}`}
+                              checked={post.is_active === false}
+                              onChange={() => handleTogglePostActive(post.id, false)}
+                              className="accent-rose-600 cursor-pointer"
+                            />
+                            {locale === 'ko' ? '비활성화' : 'Disabled'}
+                          </label>
+                        </div>
+                      )}
                       <span className="text-[11px] text-zinc-400">
                         {new Date(post.created_at).toLocaleString(
                           locale === 'ko' ? 'ko-KR' : 'en-US'
                         )}
                       </span>
-                      {isAdmin && (
+                      {isAdmin && !post.admin_reply && (
                         <button
                           type="button"
                           onClick={() => {
@@ -449,22 +503,16 @@ export default function BoardPage() {
                               setReplyDraft('');
                             } else {
                               setReplyTargetId(post.id);
-                              setReplyDraft(post.admin_reply || '');
+                              setReplyDraft('');
                               setReplyNotice('');
                             }
                           }}
                           className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer"
                         >
-                          {post.admin_reply
-                            ? locale === 'ko'
-                              ? '답변 수정'
-                              : 'Edit Reply'
-                            : locale === 'ko'
-                              ? '답변 작성'
-                              : 'Reply'}
+                          {locale === 'ko' ? '답변 작성' : 'Reply'}
                         </button>
                       )}
-                      {(isAuthor || isAdmin) && (
+                      {(isAuthor || isAdmin) && !post.admin_reply && (
                         <button
                           type="button"
                           onClick={() => handleDelete(post.id)}
@@ -514,7 +562,7 @@ export default function BoardPage() {
                     </div>
                   )}
 
-                  {isAdmin && replyTargetId === post.id && (
+                  {isAdmin && !post.admin_reply && replyTargetId === post.id && (
                     <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 space-y-3">
                       <div className="text-xs font-bold text-zinc-700">
                         {locale === 'ko'

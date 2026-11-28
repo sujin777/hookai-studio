@@ -10,12 +10,15 @@ export interface BoardPost {
   title: string;
   content: string;
   image_data?: string | null;
+  is_active: boolean;
   admin_reply?: string | null;
   admin_replied_at?: string | null;
   created_at: string;
 }
 
-const globalForBoard = globalThis as unknown as { __hookaiBoardPosts?: BoardPost[] };
+const globalForBoard = globalThis as unknown as {
+  __hookaiBoardPosts?: BoardPost[];
+};
 
 function getMemoryPosts(): BoardPost[] {
   if (!globalForBoard.__hookaiBoardPosts) {
@@ -24,7 +27,10 @@ function getMemoryPosts(): BoardPost[] {
   return globalForBoard.__hookaiBoardPosts;
 }
 
-export async function listBoardPosts(category?: string): Promise<{
+export async function listBoardPosts(
+  category?: string,
+  includeInactive = false
+): Promise<{
   source: 'supabase' | 'memory';
   posts: BoardPost[];
 }> {
@@ -36,26 +42,31 @@ export async function listBoardPosts(category?: string): Promise<{
 
   if (!supabase) {
     const posts = getMemoryPosts()
-      .filter((p) => !validCat || p.category === validCat)
+      .filter((p) => (!validCat || p.category === validCat) && (includeInactive || p.is_active !== false))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
     return { source: 'memory', posts };
   }
 
   let query = supabase
     .from('board_posts')
-    .select('id, author_email, category, title, content, image_data, admin_reply, admin_replied_at, created_at')
+    .select(
+      'id, author_email, category, title, content, image_data, is_active, admin_reply, admin_replied_at, created_at'
+    )
     .order('created_at', { ascending: false })
     .limit(100);
 
   if (validCat) {
     query = query.eq('category', validCat);
   }
+  if (!includeInactive) {
+    query = query.eq('is_active', true);
+  }
 
   const { data, error } = await query;
   if (error) {
     if (isMissingTableError(error.message)) {
       const posts = getMemoryPosts()
-        .filter((p) => !validCat || p.category === validCat)
+        .filter((p) => (!validCat || p.category === validCat) && (includeInactive || p.is_active !== false))
         .sort((a, b) => b.created_at.localeCompare(a.created_at));
       return { source: 'memory', posts };
     }
@@ -79,6 +90,7 @@ export async function createBoardPost(input: {
     title: input.title.trim(),
     content: input.content.trim(),
     image_data: input.image_data || null,
+    is_active: true,
     created_at: new Date().toISOString(),
   };
 
@@ -96,8 +108,9 @@ export async function createBoardPost(input: {
       title: post.title,
       content: post.content,
       image_data: post.image_data,
+      is_active: true,
     })
-    .select('id, author_email, category, title, content, image_data, created_at')
+    .select('id, author_email, category, title, content, image_data, is_active, created_at')
     .single();
 
   if (error) {
@@ -123,6 +136,9 @@ export async function deleteBoardPost(
     const posts = getMemoryPosts();
     const idx = posts.findIndex((p) => p.id === id);
     if (idx === -1) throw new Error('Post not found.');
+    if (posts[idx].admin_reply) {
+      throw new Error('답변이 달린 게시글은 삭제할 수 없습니다.');
+    }
     if (!isAdmin && posts[idx].author_email !== cleanEmail) {
       throw new Error('Forbidden');
     }
@@ -136,7 +152,7 @@ export async function deleteBoardPost(
 
   const { data: existing, error: fetchErr } = await supabase
     .from('board_posts')
-    .select('id, author_email')
+    .select('id, author_email, admin_reply')
     .eq('id', id)
     .maybeSingle();
 
@@ -149,6 +165,9 @@ export async function deleteBoardPost(
   }
 
   if (!existing) throw new Error('Post not found.');
+  if (existing.admin_reply) {
+    throw new Error('답변이 달린 게시글은 삭제할 수 없습니다.');
+  }
   if (!isAdmin && existing.author_email !== cleanEmail) {
     throw new Error('Forbidden');
   }
@@ -166,6 +185,9 @@ export async function replyToBoardPost(id: string, replyText: string): Promise<B
     const posts = getMemoryPosts();
     const post = posts.find((p) => p.id === id);
     if (!post) throw new Error('Post not found.');
+    if (post.admin_reply) {
+      throw new Error('이미 답변이 등록된 게시글은 수정할 수 없습니다.');
+    }
     post.admin_reply = cleanReply || null;
     post.admin_replied_at = cleanReply ? now : null;
     return post;
@@ -175,6 +197,24 @@ export async function replyToBoardPost(id: string, replyText: string): Promise<B
     return replyInMemory();
   }
 
+  const { data: existing, error: fetchErr } = await supabase
+    .from('board_posts')
+    .select('id, admin_reply')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (fetchErr) {
+    if (isMissingTableError(fetchErr.message)) {
+      return replyInMemory();
+    }
+    throw new Error(fetchErr.message);
+  }
+
+  if (!existing) throw new Error('Post not found.');
+  if (existing.admin_reply) {
+    throw new Error('이미 답변이 등록된 게시글은 수정할 수 없습니다.');
+  }
+
   const { data, error } = await supabase
     .from('board_posts')
     .update({
@@ -182,12 +222,44 @@ export async function replyToBoardPost(id: string, replyText: string): Promise<B
       admin_replied_at: cleanReply ? now : null,
     })
     .eq('id', id)
-    .select('id, author_email, category, title, content, image_data, admin_reply, admin_replied_at, created_at')
+    .select('id, author_email, category, title, content, image_data, is_active, admin_reply, admin_replied_at, created_at')
     .single();
 
   if (error) {
     if (isMissingTableError(error.message)) {
       return replyInMemory();
+    }
+    throw new Error(error.message);
+  }
+
+  return data as BoardPost;
+}
+
+export async function setBoardPostActive(id: string, isActive: boolean): Promise<BoardPost> {
+  const next = Boolean(isActive);
+  const supabase = getSupabaseAdmin();
+
+  const updateInMemory = () => {
+    const post = getMemoryPosts().find((p) => p.id === id);
+    if (!post) throw new Error('Post not found.');
+    post.is_active = next;
+    return post;
+  };
+
+  if (!supabase) {
+    return updateInMemory();
+  }
+
+  const { data, error } = await supabase
+    .from('board_posts')
+    .update({ is_active: next })
+    .eq('id', id)
+    .select('id, author_email, category, title, content, image_data, is_active, admin_reply, admin_replied_at, created_at')
+    .single();
+
+  if (error) {
+    if (isMissingTableError(error.message)) {
+      return updateInMemory();
     }
     throw new Error(error.message);
   }

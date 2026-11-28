@@ -29,11 +29,13 @@ create table if not exists public.board_posts (
   title text not null,
   content text not null,
   image_data text,
+  is_active boolean not null default true,
   admin_reply text,
   admin_replied_at timestamptz,
   created_at timestamptz not null default now()
 );
 
+alter table public.board_posts add column if not exists is_active boolean not null default true;
 alter table public.board_posts add column if not exists admin_reply text;
 alter table public.board_posts add column if not exists admin_replied_at timestamptz;
 

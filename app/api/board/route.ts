@@ -6,6 +6,7 @@ import {
   deleteBoardPost,
   listBoardPosts,
   replyToBoardPost,
+  setBoardPostActive,
 } from '@/lib/boardStore';
 import { sendBoardReplyNotificationEmail } from '@/lib/emailSender';
 import { getUserSessionEmail } from '@/lib/userAuth';
@@ -15,10 +16,12 @@ const VALID_CATEGORIES = new Set<BoardCategory>(['feature', 'interior', 'contrac
 export async function GET(req: NextRequest) {
   try {
     const category = req.nextUrl.searchParams.get('category') || 'all';
-    const data = await listBoardPosts(category);
+    const isAdmin = isAdminAuthenticated(req);
+    const includeInactive = isAdmin && req.nextUrl.searchParams.get('includeInactive') === '1';
+    const data = await listBoardPosts(category, includeInactive);
     return NextResponse.json({
       ok: true,
-      isAdmin: isAdminAuthenticated(req),
+      isAdmin,
       ...data,
     });
   } catch (err: unknown) {
@@ -113,6 +116,27 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, post, emailNotification });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to save reply';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  if (!isAdminAuthenticated(req)) {
+    return NextResponse.json(
+      { error: '관리자 로그인(/admin) 후 게시글 상태를 변경할 수 있습니다.' },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { id, isActive } = await req.json();
+    if (!id || typeof id !== 'string') {
+      return NextResponse.json({ error: 'Post id is required.' }, { status: 400 });
+    }
+    const post = await setBoardPostActive(id, Boolean(isActive));
+    return NextResponse.json({ ok: true, post });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to update post status';
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

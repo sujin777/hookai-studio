@@ -37,6 +37,7 @@ interface BoardPost {
   title: string;
   content: string;
   image_data?: string | null;
+  is_active?: boolean;
   admin_reply?: string | null;
   admin_replied_at?: string | null;
   created_at: string;
@@ -85,7 +86,7 @@ export default function AdminDashboardPage() {
       const [custRes, payRes, boardRes] = await Promise.all([
         fetch(`/api/admin/customers?q=${encodeURIComponent(q)}`),
         fetch('/api/admin/payments'),
-        fetch('/api/board?category=all'),
+        fetch('/api/board?category=all&includeInactive=1'),
       ]);
       if (custRes.status === 401 || payRes.status === 401) {
         setAuthenticated(false);
@@ -103,6 +104,31 @@ export default function AdminDashboardPage() {
       setLoadingData(false);
     }
   }, []);
+
+  const handleTogglePostActive = async (id: string, isActive: boolean) => {
+    setBoardNotice('');
+    setActionErr('');
+    try {
+      const res = await fetch('/api/board', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, isActive }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setActionErr(data.error || '게시글 상태 변경에 실패했습니다.');
+        return;
+      }
+      setBoardPosts((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, is_active: isActive } : p))
+      );
+      setBoardNotice(
+        isActive ? '게시글이 활성화되었습니다.' : '게시글이 비활성화되었습니다. (일반 사용자에게 숨겨집니다)'
+      );
+    } catch {
+      setActionErr('게시글 상태 변경 중 오류가 발생했습니다.');
+    }
+  };
 
   const handleSaveBoardReply = async (id: string) => {
     setSavingReply(true);
@@ -745,39 +771,70 @@ export default function AdminDashboardPage() {
                         <span className="text-xs font-bold text-zinc-700">
                           {post.author_email}
                         </span>
+                        {post.is_active === false && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold">
+                            비활성화됨
+                          </span>
+                        )}
                         {post.admin_reply && (
                           <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
                             답변완료
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="inline-flex items-center gap-2.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-bold">
+                          <label className="inline-flex items-center gap-1 cursor-pointer text-emerald-700">
+                            <input
+                              type="radio"
+                              name={`admin-post-active-${post.id}`}
+                              checked={post.is_active !== false}
+                              onChange={() => handleTogglePostActive(post.id, true)}
+                              className="accent-emerald-600 cursor-pointer"
+                            />
+                            활성화
+                          </label>
+                          <label className="inline-flex items-center gap-1 cursor-pointer text-rose-600">
+                            <input
+                              type="radio"
+                              name={`admin-post-active-${post.id}`}
+                              checked={post.is_active === false}
+                              onChange={() => handleTogglePostActive(post.id, false)}
+                              className="accent-rose-600 cursor-pointer"
+                            />
+                            비활성화
+                          </label>
+                        </div>
                         <span className="text-[11px] text-zinc-400">
                           {new Date(post.created_at).toLocaleString('ko-KR')}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (replyTargetId === post.id) {
-                              setReplyTargetId(null);
-                              setReplyDraft('');
-                            } else {
-                              setReplyTargetId(post.id);
-                              setReplyDraft(post.admin_reply || '');
-                              setBoardNotice('');
-                            }
-                          }}
-                          className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
-                        >
-                          {post.admin_reply ? '답변 수정' : '답변 달기'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteBoardPost(post.id)}
-                          className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
-                        >
-                          삭제
-                        </button>
+                        {!post.admin_reply && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (replyTargetId === post.id) {
+                                  setReplyTargetId(null);
+                                  setReplyDraft('');
+                                } else {
+                                  setReplyTargetId(post.id);
+                                  setReplyDraft('');
+                                  setBoardNotice('');
+                                }
+                              }}
+                              className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
+                            >
+                              답변 달기
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteBoardPost(post.id)}
+                              className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
+                            >
+                              삭제
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -812,7 +869,7 @@ export default function AdminDashboardPage() {
                       </div>
                     )}
 
-                    {replyTargetId === post.id && (
+                    {!post.admin_reply && replyTargetId === post.id && (
                       <div className="rounded-xl border border-zinc-200 bg-white p-3.5 space-y-2.5">
                         <div className="text-[11px] font-bold text-zinc-600">
                           저장 시 작성자({post.author_email})에게 답변 알림 메일이 자동 발송됩니다.
