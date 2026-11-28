@@ -35,6 +35,7 @@ interface PaddleBarProps {
   remainingCredits: number | null;
   targetPath: string;
   onCreditsUpdated?: (credits: number) => void;
+  hideCheckout?: boolean;
 }
 
 export function PaddleBar({
@@ -46,6 +47,7 @@ export function PaddleBar({
   remainingCredits,
   targetPath,
   onCreditsUpdated,
+  hideCheckout = false,
 }: PaddleBarProps) {
   const { locale, t } = useLanguage();
   const [authOpen, setAuthOpen] = useState(false);
@@ -298,13 +300,15 @@ export function PaddleBar({
                 {authBtnLabel}
               </button>
             )}
-            <button
-              type="button"
-              onClick={openCheckout}
-              className="text-[11px] font-bold bg-zinc-950 text-white px-3 py-1.5 rounded-xl hover:bg-zinc-800 transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
-            >
-              {t.unlockProPack} ({priceLabel.split('/')[0].trim()})
-            </button>
+            {!hideCheckout && (
+              <button
+                type="button"
+                onClick={openCheckout}
+                className="text-[11px] font-bold bg-zinc-950 text-white px-3 py-1.5 rounded-xl hover:bg-zinc-800 transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+              >
+                {t.unlockProPack} ({priceLabel.split('/')[0].trim()})
+              </button>
+            )}
           </div>
         </div>
 

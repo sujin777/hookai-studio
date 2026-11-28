@@ -22,6 +22,21 @@ alter table public.customer_accounts add column if not exists is_verified boolea
 alter table public.customer_accounts add column if not exists verification_token text;
 alter table public.customer_accounts add column if not exists verification_expires_at timestamptz;
 
+create table if not exists public.board_posts (
+  id uuid primary key default gen_random_uuid(),
+  author_email text not null,
+  category text not null check (category in ('feature', 'interior', 'contract')),
+  title text not null,
+  content text not null,
+  image_data text,
+  admin_reply text,
+  admin_replied_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.board_posts add column if not exists admin_reply text;
+alter table public.board_posts add column if not exists admin_replied_at timestamptz;
+
 create table if not exists public.paddle_transactions (
   transaction_id text primary key,
   email text not null,

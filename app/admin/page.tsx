@@ -30,6 +30,24 @@ interface OverviewState {
   payments: PaymentRecord[];
 }
 
+interface BoardPost {
+  id: string;
+  author_email: string;
+  category: 'feature' | 'interior' | 'contract';
+  title: string;
+  content: string;
+  image_data?: string | null;
+  admin_reply?: string | null;
+  admin_replied_at?: string | null;
+  created_at: string;
+}
+
+const BOARD_CATEGORY_LABELS: Record<BoardPost['category'], string> = {
+  feature: '추가기능',
+  interior: '인테리어AI',
+  contract: '계약서 스캐너',
+};
+
 export default function AdminDashboardPage() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -37,9 +55,14 @@ export default function AdminDashboardPage() {
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
-  const [tab, setTab] = useState<'customers' | 'payments'>('customers');
+  const [tab, setTab] = useState<'customers' | 'payments' | 'board'>('customers');
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [overview, setOverview] = useState<OverviewState | null>(null);
+  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([]);
+  const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [savingReply, setSavingReply] = useState(false);
+  const [boardNotice, setBoardNotice] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingData, setLoadingData] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
@@ -59,9 +82,10 @@ export default function AdminDashboardPage() {
     setLoadingData(true);
     setActionErr('');
     try {
-      const [custRes, payRes] = await Promise.all([
+      const [custRes, payRes, boardRes] = await Promise.all([
         fetch(`/api/admin/customers?q=${encodeURIComponent(q)}`),
         fetch('/api/admin/payments'),
+        fetch('/api/board?category=all'),
       ]);
       if (custRes.status === 401 || payRes.status === 401) {
         setAuthenticated(false);
@@ -69,14 +93,65 @@ export default function AdminDashboardPage() {
       }
       const custData = await custRes.json();
       const payData = await payRes.json();
+      const boardData = await boardRes.json();
       if (custData.ok) setCustomers(custData.customers || []);
       if (payData.ok) setOverview(payData);
+      if (boardData.ok) setBoardPosts(boardData.posts || []);
     } catch {
       setActionErr('데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoadingData(false);
     }
   }, []);
+
+  const handleSaveBoardReply = async (id: string) => {
+    setSavingReply(true);
+    setBoardNotice('');
+    setActionErr('');
+    try {
+      const res = await fetch('/api/board', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, reply: replyDraft }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setActionErr(data.error || '답변 저장에 실패했습니다.');
+        return;
+      }
+      setReplyTargetId(null);
+      setReplyDraft('');
+      if (data.emailNotification?.sent) {
+        setBoardNotice(`답변이 저장되었으며 작성자(${data.post?.author_email})에게 안내 메일이 자동 발송되었습니다.`);
+      } else if (data.emailNotification && !data.emailNotification.sent) {
+        setBoardNotice(`답변은 저장되었으나 메일 발송에 실패했습니다: ${data.emailNotification.error}`);
+      } else {
+        setBoardNotice('답변이 저장되었습니다.');
+      }
+      loadDashboard();
+    } catch {
+      setActionErr('답변 저장 중 네트워크 오류가 발생했습니다.');
+    } finally {
+      setSavingReply(false);
+    }
+  };
+
+  const handleDeleteBoardPost = async (id: string) => {
+    if (!confirm('이 게시글을 삭제하시겠습니까?')) return;
+    setActionErr('');
+    const res = await fetch('/api/board', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) {
+      setBoardNotice('게시글이 삭제되었습니다.');
+      loadDashboard();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setActionErr(data.error || '게시글 삭제에 실패했습니다.');
+    }
+  };
 
   useEffect(() => {
     fetch('/api/admin/auth')
@@ -395,6 +470,15 @@ export default function AdminDashboardPage() {
           >
             Paddle 결제 내역 ({overview?.payments.length ?? 0})
           </button>
+          <button
+            type="button"
+            onClick={() => setTab('board')}
+            className={`px-4 py-2 rounded-lg transition cursor-pointer ${
+              tab === 'board' ? 'bg-white text-zinc-950 shadow-2xs' : 'text-zinc-600'
+            }`}
+          >
+            게시판 관리 / 답변 ({boardPosts.length})
+          </button>
         </div>
 
         {tab === 'customers' ? (
@@ -570,7 +654,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : tab === 'payments' ? (
           <div className="bg-white rounded-3xl border border-zinc-200/90 p-5 sm:p-6 shadow-xs space-y-4">
             <h2 className="text-sm font-extrabold text-zinc-950">
               Paddle 결제 내역 ({overview?.payments.length ?? 0})
@@ -621,6 +705,151 @@ export default function AdminDashboardPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl border border-zinc-200/90 p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-extrabold text-zinc-950">
+                커뮤니티 게시판 관리 / 관리자 답변 ({boardPosts.length})
+              </h2>
+              <Link
+                href="/board"
+                className="text-xs font-bold text-emerald-700 hover:underline"
+              >
+                게시판 바로가기 →
+              </Link>
+            </div>
+
+            {boardNotice && (
+              <div className="px-4 py-3 rounded-2xl border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-800">
+                {boardNotice}
+              </div>
+            )}
+
+            {boardPosts.length === 0 ? (
+              <div className="py-10 text-center text-xs text-zinc-400">
+                등록된 게시글이 없습니다.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {boardPosts.map((post) => (
+                  <div
+                    key={post.id}
+                    className="rounded-2xl border border-zinc-200 p-4 sm:p-5 space-y-3 bg-zinc-50/40"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-zinc-900 text-white text-[11px] font-bold">
+                          {BOARD_CATEGORY_LABELS[post.category] || post.category}
+                        </span>
+                        <span className="text-xs font-bold text-zinc-700">
+                          {post.author_email}
+                        </span>
+                        {post.admin_reply && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                            답변완료
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] text-zinc-400">
+                          {new Date(post.created_at).toLocaleString('ko-KR')}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (replyTargetId === post.id) {
+                              setReplyTargetId(null);
+                              setReplyDraft('');
+                            } else {
+                              setReplyTargetId(post.id);
+                              setReplyDraft(post.admin_reply || '');
+                              setBoardNotice('');
+                            }
+                          }}
+                          className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
+                        >
+                          {post.admin_reply ? '답변 수정' : '답변 달기'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBoardPost(post.id)}
+                          className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-extrabold text-zinc-950">{post.title}</div>
+                      <p className="mt-1 text-xs text-zinc-600 whitespace-pre-wrap leading-relaxed">
+                        {post.content}
+                      </p>
+                    </div>
+
+                    {post.image_data && (
+                      <img
+                        src={post.image_data}
+                        alt={post.title}
+                        className="max-h-48 rounded-xl border border-zinc-200 object-contain bg-white"
+                      />
+                    )}
+
+                    {post.admin_reply && (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 space-y-1">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800">
+                          <span>관리자 답변</span>
+                          {post.admin_replied_at && (
+                            <span className="text-emerald-600">
+                              {new Date(post.admin_replied_at).toLocaleString('ko-KR')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-emerald-950 whitespace-pre-wrap leading-relaxed">
+                          {post.admin_reply}
+                        </p>
+                      </div>
+                    )}
+
+                    {replyTargetId === post.id && (
+                      <div className="rounded-xl border border-zinc-200 bg-white p-3.5 space-y-2.5">
+                        <div className="text-[11px] font-bold text-zinc-600">
+                          저장 시 작성자({post.author_email})에게 답변 알림 메일이 자동 발송됩니다.
+                        </div>
+                        <textarea
+                          rows={3}
+                          value={replyDraft}
+                          onChange={(e) => setReplyDraft(e.target.value)}
+                          placeholder="관리자 답변 내용을 입력하세요 (비우고 저장하면 답변이 삭제됩니다)."
+                          className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={savingReply}
+                            onClick={() => handleSaveBoardReply(post.id)}
+                            className="px-4 py-2 rounded-xl bg-zinc-950 text-white text-xs font-bold hover:bg-emerald-600 transition cursor-pointer disabled:opacity-50"
+                          >
+                            {savingReply ? '저장 · 메일 발송 중...' : '답변 저장 · 메일 발송'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyTargetId(null);
+                              setReplyDraft('');
+                            }}
+                            className="px-4 py-2 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition cursor-pointer"
+                          >
+                            취소
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>

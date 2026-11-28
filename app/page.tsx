@@ -230,6 +230,13 @@ export default function HookAIHomePage() {
               >
                 {t.navSign}
               </Link>
+              <Link
+                href="/board"
+                suppressHydrationWarning
+                className="hover:text-zinc-950 transition-colors"
+              >
+                {locale === 'ko' ? '게시판' : locale === 'ja' ? '掲示板' : locale === 'es' ? 'Foro' : locale === 'zh' ? '社区' : 'Board'}
+              </Link>
             </nav>
 
             <LanguageSelector />
