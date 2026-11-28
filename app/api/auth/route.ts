@@ -24,11 +24,23 @@ function setSessionCookie(res: NextResponse, email: string) {
   });
 }
 
+function getOriginFromRequest(req: NextRequest): string {
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
+  if (host && !host.startsWith('0.0.0.0')) {
+    const isLocal =
+      host.startsWith('localhost') ||
+      host.startsWith('127.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.');
+    const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https');
+    return `${proto}://${host}`;
+  }
+  const origin = req.nextUrl.origin || 'http://localhost:3000';
+  return origin.replace('://0.0.0.0', '://localhost');
+}
+
 function buildVerifyUrl(req: NextRequest, token: string): string {
-  const base =
-    req.nextUrl.origin ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '') ||
-    'http://localhost:3000';
+  const base = getOriginFromRequest(req);
   return `${base}/api/auth/verify?token=${encodeURIComponent(token)}`;
 }
 
@@ -123,11 +135,28 @@ export async function POST(req: NextRequest) {
     }
 
     if (supabase) {
-      const { data: existingAcc, error: accErr } = await supabase
+      let existingAcc: { email: string; password_hash: string; is_verified?: boolean } | null = null;
+      let hasVerificationCols = true;
+
+      const queryRes = await supabase
         .from('customer_accounts')
         .select('email, password_hash, is_verified')
         .eq('email', email)
         .maybeSingle();
+
+      let accErr = queryRes.error;
+      if (accErr && accErr.message.toLowerCase().includes('is_verified')) {
+        hasVerificationCols = false;
+        const fallbackRes = await supabase
+          .from('customer_accounts')
+          .select('email, password_hash')
+          .eq('email', email)
+          .maybeSingle();
+        existingAcc = fallbackRes.data;
+        accErr = fallbackRes.error;
+      } else {
+        existingAcc = queryRes.data;
+      }
 
       if (accErr && isMissingTableError(accErr.message)) {
         useMemory = true;
@@ -144,13 +173,15 @@ export async function POST(req: NextRequest) {
         const expiresAtIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
         const password_hash = hashPassword(password);
 
-        const { error: insErr } = await supabase.from('customer_accounts').insert({
-          email,
-          password_hash,
-          is_verified: false,
-          verification_token: token,
-          verification_expires_at: expiresAtIso,
-        });
+        const { error: insErr } = hasVerificationCols
+          ? await supabase.from('customer_accounts').insert({
+              email,
+              password_hash,
+              is_verified: false,
+              verification_token: token,
+              verification_expires_at: expiresAtIso,
+            })
+          : await supabase.from('customer_accounts').insert({ email, password_hash });
         if (insErr) {
           return NextResponse.json({ error: insErr.message }, { status: 500 });
         }
@@ -162,20 +193,22 @@ export async function POST(req: NextRequest) {
             { onConflict: 'email', ignoreDuplicates: true }
           );
 
-        const verifyUrl = buildVerifyUrl(req, token);
-        const emailRes = await sendVerificationEmail(email, verifyUrl);
-        if (!emailRes.sent) {
-          store.accounts.delete(email);
-          return NextResponse.json(
-            { error: emailRes.error || '이메일 발송에 실패했습니다.' },
-            { status: 503 }
-          );
+        if (hasVerificationCols) {
+          const verifyUrl = buildVerifyUrl(req, token);
+          const emailRes = await sendVerificationEmail(email, verifyUrl);
+          if (!emailRes.sent) {
+            await supabase.from('customer_accounts').delete().eq('email', email);
+            return NextResponse.json(
+              { error: emailRes.error || '이메일 발송에 실패했습니다.' },
+              { status: 503 }
+            );
+          }
+          return NextResponse.json({
+            ok: true,
+            requiresVerification: true,
+            emailSent: true,
+          });
         }
-        return NextResponse.json({
-          ok: true,
-          requiresVerification: true,
-          emailSent: true,
-        });
       } else {
         if (!existingAcc) {
           // Existing paid/admin-created customer claiming account on first login
@@ -191,16 +224,16 @@ export async function POST(req: NextRequest) {
               { status: 404 }
             );
           }
-          await supabase.from('customer_accounts').insert({
-            email,
-            password_hash: hashPassword(password),
-            is_verified: true,
-          });
+          await supabase.from('customer_accounts').insert(
+            hasVerificationCols
+              ? { email, password_hash: hashPassword(password), is_verified: true }
+              : { email, password_hash: hashPassword(password) }
+          );
         } else {
           if (!verifyPassword(password, existingAcc.password_hash)) {
             return NextResponse.json({ error: 'Incorrect password.' }, { status: 401 });
           }
-          if (existingAcc.is_verified === false) {
+          if (hasVerificationCols && existingAcc.is_verified === false) {
             return NextResponse.json(
               {
                 error: '이메일 인증이 필요합니다. 메일함의 활성화 링크를 클릭해 주세요.',

@@ -21,7 +21,7 @@ export async function sendVerificationEmail(
 
   // 1. Try SMTP (Gmail / Naver / Custom SMTP) first if configured
   const smtpUser = process.env.SMTP_USER?.trim();
-  const smtpPass = process.env.SMTP_PASS?.trim();
+  const smtpPass = process.env.SMTP_PASS?.replace(/\s+/g, '').trim();
   if (smtpUser && smtpPass && !smtpPass.includes('your_')) {
     const smtpHost = process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
     const smtpPort = Number(process.env.SMTP_PORT || 465);
@@ -42,6 +42,13 @@ export async function sendVerificationEmail(
       return { sent: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'SMTP send failed';
+      if (msg.includes('534-5.7.9') || msg.includes('Application-specific password required')) {
+        return {
+          sent: false,
+          error:
+            'Gmail 일반 비밀번호가 아니라 16자리 "앱 비밀번호"가 필요합니다. https://myaccount.google.com/apppasswords 에서 생성 후 .env.local의 SMTP_PASS에 입력해 주세요.',
+        };
+      }
       return { sent: false, error: `SMTP 발송 실패: ${msg}` };
     }
   }

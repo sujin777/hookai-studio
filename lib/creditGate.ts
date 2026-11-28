@@ -65,7 +65,13 @@ function isConfigured(val?: string): val is string {
 export function isMissingTableError(message?: string): boolean {
   if (!message) return false;
   const lower = message.toLowerCase();
-  return lower.includes('schema cache') || lower.includes('does not exist') || lower.includes('relation');
+  if (lower.includes('column ') && lower.includes('does not exist')) {
+    return false;
+  }
+  return (
+    lower.includes('schema cache') ||
+    (lower.includes('relation') && lower.includes('does not exist'))
+  );
 }
 
 export function getSupabaseAdmin(): SupabaseClient | null {

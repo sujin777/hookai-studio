@@ -2,9 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getMemoryStore, getSupabaseAdmin, isMissingTableError } from '@/lib/creditGate';
 import { createUserSessionToken, USER_COOKIE_NAME } from '@/lib/userAuth';
 
+function getOriginFromRequest(req: NextRequest): string {
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
+  if (host && !host.startsWith('0.0.0.0')) {
+    const isLocal =
+      host.startsWith('localhost') ||
+      host.startsWith('127.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.');
+    const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https');
+    return `${proto}://${host}`;
+  }
+  const origin = req.nextUrl.origin || 'http://localhost:3000';
+  return origin.replace('://0.0.0.0', '://localhost');
+}
+
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token')?.trim() || '';
-  const redirectTarget = new URL('/interior', req.url);
+  const redirectTarget = new URL('/interior', getOriginFromRequest(req));
 
   if (!token) {
     redirectTarget.searchParams.set('verify_error', 'missing_token');
